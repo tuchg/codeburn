@@ -13,10 +13,11 @@ mod types;
 
 use std::io::IsTerminal;
 
+use chrono::NaiveDate;
 use clap::{Parser, Subcommand};
 
 use crate::parser::discover_and_parse;
-use crate::types::{Period, ProviderKind};
+use crate::types::{DateSpec, Period, ProviderKind};
 
 #[derive(Parser)]
 #[command(
@@ -47,6 +48,12 @@ enum Commands {
         /// Filter to a specific provider
         #[arg(long, value_enum)]
         provider: Option<ProviderKind>,
+        /// Custom start date (YYYY-MM-DD), overrides --period
+        #[arg(long)]
+        since: Option<NaiveDate>,
+        /// Custom end date (YYYY-MM-DD), used with --since
+        #[arg(long)]
+        until: Option<NaiveDate>,
     },
     /// Show today's usage (plain text)
     Today {
@@ -68,6 +75,22 @@ enum Commands {
     },
     /// List all supported providers
     Providers,
+}
+
+/// Build a DateSpec from the report command's arguments.
+fn resolve_date_spec(period: Period, since: &Option<NaiveDate>, until: &Option<NaiveDate>) -> DateSpec {
+    if let Some(start) = since {
+        let end = until.unwrap_or_else(|| {
+            chrono::Local::now().date_naive().succ_opt().unwrap_or(chrono::Local::now().date_naive())
+        });
+        DateSpec::Custom {
+            start: *start,
+            end,
+            label: None,
+        }
+    } else {
+        DateSpec::Period(period)
+    }
 }
 
 fn main() {
@@ -113,23 +136,25 @@ fn main() {
             }
         }
         _ => {
-            let (period, provider_filter) = match &cli.command {
-                Some(Commands::Report { period, provider }) => (*period, provider.as_ref()),
-                Some(Commands::Today { provider }) => (Period::Today, provider.as_ref()),
-                Some(Commands::Month { provider }) => (Period::Month, provider.as_ref()),
-                None => (Period::Week, None),
+            let (date_spec, provider_filter) = match &cli.command {
+                Some(Commands::Report { period, provider, since, until }) => {
+                    (resolve_date_spec(*period, since, until), provider.as_ref())
+                }
+                Some(Commands::Today { provider }) => (DateSpec::Period(Period::Today), provider.as_ref()),
+                Some(Commands::Month { provider }) => (DateSpec::Period(Period::Month), provider.as_ref()),
+                None => (DateSpec::Period(Period::Week), None),
                 _ => unreachable!(),
             };
 
             // Launch TUI when running interactively; fall back to plain text when piped.
             if std::io::stdout().is_terminal() && cli.command.is_none() {
-                if let Err(e) = tui::run_tui(period, provider_filter) {
+                if let Err(e) = tui::run_tui(Period::Week, provider_filter) {
                     eprintln!("TUI error: {}", e);
                 }
                 return;
             }
 
-            let (date_range, label) = period.date_range();
+            let (date_range, label) = date_spec.date_range();
             let projects = discover_and_parse(&date_range, provider_filter);
             let report = stats::build_report(&projects, &label);
             display::print_report(&report);

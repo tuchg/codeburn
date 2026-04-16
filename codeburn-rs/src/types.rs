@@ -140,6 +140,41 @@ pub struct DateRange {
     pub end: NaiveDate,
 }
 
+/// Flexible date specification: either a named period or an arbitrary date range.
+/// This is the primary API for library consumers to specify time ranges.
+#[derive(Debug, Clone)]
+pub enum DateSpec {
+    /// One of the built-in named periods.
+    Period(Period),
+    /// A custom date range with an optional label.
+    Custom {
+        start: NaiveDate,
+        end: NaiveDate,
+        label: Option<String>,
+    },
+}
+
+impl DateSpec {
+    /// Compute the concrete date range and a human-readable label.
+    pub fn date_range(&self) -> (DateRange, String) {
+        match self {
+            DateSpec::Period(p) => p.date_range(),
+            DateSpec::Custom { start, end, label } => {
+                let range_label = label.clone().unwrap_or_else(|| {
+                    format!("{} to {}", start, end)
+                });
+                (DateRange { start: *start, end: *end }, range_label)
+            }
+        }
+    }
+}
+
+impl From<Period> for DateSpec {
+    fn from(p: Period) -> Self {
+        DateSpec::Period(p)
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TokenUsage {
     pub input_tokens: u64,
@@ -259,4 +294,54 @@ pub struct ModelStats {
     pub calls: u64,
     pub cost_usd: f64,
     pub tokens: TokenUsage,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_date_spec_from_period() {
+        let spec = DateSpec::from(Period::Today);
+        let (range, label) = spec.date_range();
+        assert!(label.starts_with("Today"));
+        assert!(range.end > range.start);
+    }
+
+    #[test]
+    fn test_date_spec_custom_range() {
+        let start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2025, 3, 31).unwrap();
+        let spec = DateSpec::Custom {
+            start,
+            end,
+            label: Some("Q1 2025".into()),
+        };
+        let (range, label) = spec.date_range();
+        assert_eq!(range.start, start);
+        assert_eq!(range.end, end);
+        assert_eq!(label, "Q1 2025");
+    }
+
+    #[test]
+    fn test_date_spec_custom_auto_label() {
+        let start = NaiveDate::from_ymd_opt(2025, 6, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2025, 6, 30).unwrap();
+        let spec = DateSpec::Custom {
+            start,
+            end,
+            label: None,
+        };
+        let (_, label) = spec.date_range();
+        assert_eq!(label, "2025-06-01 to 2025-06-30");
+    }
+
+    #[test]
+    fn test_period_cycle() {
+        assert_eq!(Period::Today.next(), Period::Week);
+        assert_eq!(Period::Week.next(), Period::Days30);
+        assert_eq!(Period::Days30.next(), Period::Month);
+        assert_eq!(Period::Month.next(), Period::Today);
+        assert_eq!(Period::Today.prev(), Period::Month);
+    }
 }
