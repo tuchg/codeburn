@@ -1,6 +1,5 @@
 use chrono::{Datelike, Local, NaiveDate};
 use clap::ValueEnum;
-use serde::Deserialize;
 
 /// Represents a reporting period for the CLI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
@@ -135,36 +134,10 @@ impl ProviderKind {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct DateRange {
     pub start: NaiveDate,
     pub end: NaiveDate,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct JournalEntry {
-    #[serde(rename = "type")]
-    pub entry_type: String,
-    pub timestamp: Option<String>,
-    #[serde(rename = "sessionId")]
-    pub session_id: Option<String>,
-    pub message: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ApiUsage {
-    pub input_tokens: Option<u64>,
-    pub output_tokens: Option<u64>,
-    pub cache_creation_input_tokens: Option<u64>,
-    pub cache_read_input_tokens: Option<u64>,
-    pub server_tool_use: Option<ServerToolUse>,
-    pub speed: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ServerToolUse {
-    pub web_search_requests: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -190,7 +163,6 @@ impl std::ops::AddAssign for TokenUsage {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ParsedApiCall {
     pub provider: String,
@@ -207,7 +179,6 @@ pub struct ParsedApiCall {
     pub deduplication_key: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ParsedTurn {
     pub user_message: String,
@@ -219,7 +190,6 @@ pub struct ParsedTurn {
     pub has_edits: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SessionSummary {
     pub session_id: String,
@@ -251,7 +221,6 @@ pub struct CategoryStats {
     pub one_shot_turns: u64,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ProjectSummary {
     pub project: String,

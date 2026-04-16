@@ -1,5 +1,6 @@
 mod bash_utils;
 mod classifier;
+mod config;
 mod display;
 mod export;
 mod models;

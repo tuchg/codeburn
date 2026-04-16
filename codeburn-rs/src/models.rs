@@ -1,3 +1,5 @@
+use crate::config::PricingOverride;
+
 /// Model cost rates per token, matching the TS FALLBACK_PRICING
 struct ModelCosts {
     input: f64,
@@ -79,6 +81,49 @@ pub fn calculate_cost(
     web_search_requests: u64,
     speed: &str,
 ) -> f64 {
+    calculate_cost_with_overrides(
+        model,
+        input_tokens,
+        output_tokens,
+        cache_creation_tokens,
+        cache_read_tokens,
+        web_search_requests,
+        speed,
+        &[],
+    )
+}
+
+/// Calculate cost using custom pricing overrides. Overrides are checked first;
+/// if no override matches, the built-in FALLBACK_PRICING table is used.
+pub fn calculate_cost_with_overrides(
+    model: &str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_creation_tokens: u64,
+    cache_read_tokens: u64,
+    web_search_requests: u64,
+    speed: &str,
+    overrides: &[PricingOverride],
+) -> f64 {
+    let canonical = get_canonical_name(model);
+
+    // Check user overrides first (exact match on canonical name)
+    for ovr in overrides {
+        if canonical == ovr.model || canonical.starts_with(&format!("{}-", ovr.model)) {
+            let multiplier = if speed == "fast" {
+                ovr.fast_multiplier
+            } else {
+                1.0
+            };
+            return multiplier
+                * (input_tokens as f64 * ovr.input
+                    + output_tokens as f64 * ovr.output
+                    + cache_creation_tokens as f64 * ovr.cache_write
+                    + cache_read_tokens as f64 * ovr.cache_read
+                    + web_search_requests as f64 * ovr.web_search);
+        }
+    }
+
     let costs = match get_model_costs(model) {
         Some(c) => c,
         None => return 0.0,
@@ -174,5 +219,40 @@ mod tests {
         let standard = calculate_cost("claude-opus-4-6", 1000, 0, 0, 0, 0, "standard");
         let fast = calculate_cost("claude-opus-4-6", 1000, 0, 0, 0, 0, "fast");
         assert!((fast / standard - 6.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_pricing_override_takes_precedence() {
+        let overrides = vec![PricingOverride {
+            model: "unknown-model-xyz".into(),
+            input: 10e-6,
+            output: 20e-6,
+            cache_write: 0.0,
+            cache_read: 0.0,
+            web_search: 0.0,
+            fast_multiplier: 1.0,
+        }];
+        let cost = calculate_cost_with_overrides(
+            "unknown-model-xyz", 1000, 500, 0, 0, 0, "standard", &overrides,
+        );
+        // 1000 * 10e-6 + 500 * 20e-6 = 0.01 + 0.01 = 0.02
+        assert!((cost - 0.02).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_override_does_not_affect_other_models() {
+        let overrides = vec![PricingOverride {
+            model: "unknown-model-xyz".into(),
+            input: 10e-6,
+            output: 20e-6,
+            cache_write: 0.0,
+            cache_read: 0.0,
+            web_search: 0.0,
+            fast_multiplier: 1.0,
+        }];
+        let cost = calculate_cost_with_overrides(
+            "claude-sonnet-4-6", 1000, 500, 0, 0, 0, "standard", &overrides,
+        );
+        assert!((cost - 0.0105).abs() < 1e-10);
     }
 }

@@ -5,12 +5,38 @@ use std::path::{Path, PathBuf};
 use chrono::DateTime;
 use dashmap::DashMap;
 use rayon::prelude::*;
+use serde::Deserialize;
 
 use crate::bash_utils::{extract_bash_commands, is_bash_tool};
 use crate::classifier;
 use crate::models;
 use crate::timing;
 use crate::types::*;
+
+#[derive(Debug, Deserialize)]
+struct JournalEntry {
+    #[serde(rename = "type")]
+    entry_type: String,
+    timestamp: Option<String>,
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
+    message: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiUsage {
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    cache_creation_input_tokens: Option<u64>,
+    cache_read_input_tokens: Option<u64>,
+    server_tool_use: Option<ServerToolUse>,
+    speed: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ServerToolUse {
+    web_search_requests: Option<u64>,
+}
 
 const EDIT_TOOLS: &[&str] = &[
     "Edit",

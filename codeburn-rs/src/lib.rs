@@ -1,5 +1,6 @@
 pub mod bash_utils;
 pub mod classifier;
+pub mod config;
 pub mod display;
 pub mod export;
 pub mod models;
@@ -19,6 +20,8 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("Export error: {0}")]
     Export(String),
+    #[error("Config error: {0}")]
+    Config(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

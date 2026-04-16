@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::models;
 use crate::types::*;
 
 pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
@@ -103,9 +102,4 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
         mcp_breakdown,
         bash_breakdown,
     }
-}
-
-#[allow(dead_code)]
-pub fn short_model_name(model: &str) -> String {
-    models::short_model_name(model)
 }
