@@ -728,8 +728,13 @@ fn fmt_tok(n: u64) -> String {
 }
 
 fn fit(s: &str, n: usize) -> String {
-    if s.len() > n {
-        s[..n].to_string()
+    if s.chars().count() > n {
+        let byte_end = s
+            .char_indices()
+            .nth(n)
+            .map(|(i, _)| i)
+            .unwrap_or(s.len());
+        s[..byte_end].to_string()
     } else {
         format!("{:<width$}", s, width = n)
     }

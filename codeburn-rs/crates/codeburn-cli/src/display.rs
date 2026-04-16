@@ -4,6 +4,18 @@ use codeburn_core::classifier::category_label;
 use codeburn_core::timing::format_duration;
 use codeburn_core::types::Report;
 
+fn last_n_chars(s: &str, n: usize) -> &str {
+    if s.chars().count() > n {
+        s.char_indices()
+            .rev()
+            .nth(n - 1)
+            .map(|(i, _)| &s[i..])
+            .unwrap_or(s)
+    } else {
+        s
+    }
+}
+
 fn format_cost(cost: f64) -> String {
     if cost >= 100.0 {
         format!("${:.0}", cost)
@@ -87,17 +99,7 @@ pub fn print_report(report: &Report) {
         for p in report.projects.iter().take(10) {
             let cost_str = format_cost(p.total_cost_usd);
             let bar_str = bar(p.total_cost_usd, max_cost, 20);
-            let name = if p.project_path.chars().count() > 30 {
-                let byte_offset = p.project_path
-                    .char_indices()
-                    .rev()
-                    .nth(29)
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                &p.project_path[byte_offset..]
-            } else {
-                &p.project_path
-            };
+            let name = last_n_chars(&p.project_path, 30);
             println!(
                 "  {:>8}  [{}]  {}  ({} calls, {} sess, {} files, +{}/-{}, {})",
                 cost_str.bright_yellow(),
