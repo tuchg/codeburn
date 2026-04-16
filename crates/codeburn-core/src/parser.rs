@@ -258,16 +258,33 @@ fn parse_provider_sessions(
         return Vec::new();
     }
 
-    let mut seen_keys = HashSet::new();
+    // Phase 1: parse all session files in parallel, each with a local seen_keys set.
+    // Per-file dedup handles intra-file duplicates; global dedup below handles cross-file ones.
+    let parsed_by_source: Vec<(&crate::providers::types::SessionSource, Vec<crate::providers::types::ParsedProviderCall>)> =
+        sources
+            .par_iter()
+            .map(|source| {
+                let mut local_seen = HashSet::new();
+                let calls = provider.parse_session(source, &mut local_seen);
+                (source, calls)
+            })
+            .collect();
+
+    // Phase 2: global dedup + date-filter + map into ParsedApiCall, then group.
+    // Sequential, but only HashMap operations - negligible cost.
+    let mut global_seen: HashSet<String> = HashSet::new();
     // Group calls by (session_key, user_message) so multiple consecutive assistant
     // responses to the same user message are merged into one turn (enabling retry detection).
     let mut call_groups: HashMap<(String, String), (String, String, Vec<ParsedApiCall>)> =
         HashMap::new();
 
-    for source in &sources {
-        let calls = provider.parse_session(source, &mut seen_keys);
-
+    for (source, calls) in parsed_by_source {
         for call in calls {
+            // Cross-file dedup: skip if this deduplication key was seen in another file.
+            if !global_seen.insert(call.deduplication_key.clone()) {
+                continue;
+            }
+
             // Date filtering
             if !call.timestamp.is_empty() {
                 if let Ok(ts) = DateTime::parse_from_rfc3339(&call.timestamp) {
