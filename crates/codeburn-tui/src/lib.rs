@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io::{self, IsTerminal, Stdout};
-use std::time::Duration;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -17,6 +18,7 @@ use ratatui::{
 };
 
 use codeburn_core::classifier::category_label;
+use codeburn_core::format_duration;
 use codeburn_core::parser::discover_and_parse;
 use codeburn_core::stats::build_report;
 use codeburn_core::types::{Period, ProviderKind, Report};
@@ -63,12 +65,18 @@ fn provider_kind(name: &str) -> Option<ProviderKind> {
 
 // ──────────── App State ────────────
 
+const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
 pub struct App {
     period: Period,
     provider_idx: usize,
     report: Report,
     scroll: u16,
     content_height: u16,
+    loading: bool,
+    spinner_tick: usize,
+    spinner_ts: Instant,
+    rx: Option<mpsc::Receiver<Report>>,
 }
 
 impl App {
@@ -82,6 +90,10 @@ impl App {
             report: build_report(&[], ""),
             scroll: 0,
             content_height: 0,
+            loading: false,
+            spinner_tick: 0,
+            spinner_ts: Instant::now(),
+            rx: None,
         };
         app.reload();
         app
@@ -91,12 +103,41 @@ impl App {
         provider_kind(PROVIDER_CYCLE[self.provider_idx])
     }
 
+    /// Start a background reload. The result arrives via self.rx.
     fn reload(&mut self) {
-        let (dr, label) = self.period.date_range();
+        let (tx, rx) = mpsc::channel();
+        self.rx = Some(rx);
+        self.loading = true;
+        self.spinner_tick = 0;
+        self.spinner_ts = Instant::now();
+
+        let period = self.period;
         let pk = self.current_provider();
-        let projects = discover_and_parse(&dr, pk.as_ref());
-        self.report = build_report(&projects, &label);
-        self.scroll = 0;
+        std::thread::spawn(move || {
+            let (dr, label) = period.date_range();
+            let projects = discover_and_parse(&dr, pk.as_ref());
+            let report = build_report(&projects, &label);
+            let _ = tx.send(report);
+        });
+    }
+
+    /// Poll the background channel. Returns true if new data arrived.
+    fn poll_reload(&mut self) -> bool {
+        if let Some(rx) = &self.rx
+            && let Ok(report) = rx.try_recv()
+        {
+            self.report = report;
+            self.loading = false;
+            self.rx = None;
+            self.scroll = 0;
+            return true;
+        }
+        false
+    }
+
+    fn tick_spinner(&mut self) {
+        let elapsed = self.spinner_ts.elapsed();
+        self.spinner_tick = (elapsed.as_millis() / 80) as usize % SPINNER.len();
     }
 }
 
@@ -133,6 +174,14 @@ fn event_loop(
     app: &mut App,
 ) -> io::Result<()> {
     loop {
+        // Poll for completed background load
+        app.poll_reload();
+
+        // Advance spinner if loading
+        if app.loading {
+            app.tick_spinner();
+        }
+
         // Clamp scroll to valid range before drawing.
         let visible_h = terminal.size()?.height.saturating_sub(4); // tabs + status
         app.scroll = app.scroll.min(app.content_height.saturating_sub(visible_h));
@@ -142,49 +191,57 @@ fn event_loop(
             app.content_height = total;
         })?;
 
-        if event::poll(Duration::from_millis(250))?
+        // Use short poll timeout while loading (for spinner animation),
+        // longer otherwise to avoid busy-spinning when idle.
+        let timeout = if app.loading {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_millis(250)
+        };
+
+        if event::poll(timeout)?
             && let Event::Key(key) = event::read()?
         {
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Left => {
-                        app.period = app.period.prev();
-                        app.reload();
-                    }
-                    KeyCode::Right | KeyCode::Tab => {
-                        app.period = app.period.next();
-                        app.reload();
-                    }
-                    KeyCode::Char('1') => {
-                        app.period = Period::Today;
-                        app.reload();
-                    }
-                    KeyCode::Char('2') => {
-                        app.period = Period::Week;
-                        app.reload();
-                    }
-                    KeyCode::Char('3') => {
-                        app.period = Period::Days30;
-                        app.reload();
-                    }
-                    KeyCode::Char('4') => {
-                        app.period = Period::Month;
-                        app.reload();
-                    }
-                    KeyCode::Char('p') => {
-                        app.provider_idx = (app.provider_idx + 1) % PROVIDER_CYCLE.len();
-                        app.reload();
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        app.scroll = app.scroll.saturating_add(1);
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        app.scroll = app.scroll.saturating_sub(1);
-                    }
-                    KeyCode::PageDown => app.scroll = app.scroll.saturating_add(10),
-                    KeyCode::PageUp => app.scroll = app.scroll.saturating_sub(10),
-                    _ => {}
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                KeyCode::Left => {
+                    app.period = app.period.prev();
+                    app.reload();
                 }
+                KeyCode::Right | KeyCode::Tab => {
+                    app.period = app.period.next();
+                    app.reload();
+                }
+                KeyCode::Char('1') => {
+                    app.period = Period::Today;
+                    app.reload();
+                }
+                KeyCode::Char('2') => {
+                    app.period = Period::Week;
+                    app.reload();
+                }
+                KeyCode::Char('3') => {
+                    app.period = Period::Days30;
+                    app.reload();
+                }
+                KeyCode::Char('4') => {
+                    app.period = Period::Month;
+                    app.reload();
+                }
+                KeyCode::Char('p') => {
+                    app.provider_idx = (app.provider_idx + 1) % PROVIDER_CYCLE.len();
+                    app.reload();
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    app.scroll = app.scroll.saturating_add(1);
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    app.scroll = app.scroll.saturating_sub(1);
+                }
+                KeyCode::PageDown => app.scroll = app.scroll.saturating_add(10),
+                KeyCode::PageUp => app.scroll = app.scroll.saturating_sub(10),
+                _ => {}
+            }
         }
     }
 }
@@ -201,12 +258,37 @@ fn render(f: &mut Frame, app: &App) -> u16 {
     .areas(f.area());
 
     render_tabs(f, app, tabs_rect);
-    let total_h = render_content(f, app, content_rect);
+    let total_h = if app.loading {
+        render_loading(f, app, content_rect)
+    } else {
+        render_content(f, app, content_rect)
+    };
     render_status(f, status_rect);
     total_h
 }
 
-// ──────────── Period Tabs ────────────
+// ──────────── Loading Panel ────────────
+
+fn render_loading(f: &mut Frame, app: &App, area: Rect) -> u16 {
+    let spinner_char = SPINNER[app.spinner_tick % SPINNER.len()];
+    let provider_name = PROVIDER_CYCLE[app.provider_idx];
+    let label = if provider_name == "all" {
+        app.period.label().to_string()
+    } else {
+        format!("{} / {}", app.period.label(), provider_name)
+    };
+    let block = panel_block("CodeBurn", ORANGE);
+    let inner = block.inner(area);
+    let line = Line::from(vec![
+        Span::styled(format!("{} ", spinner_char), bold(ORANGE)),
+        Span::styled(format!("Loading {}...", label), dim()),
+    ]);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(vec![line]), inner);
+    area.height
+}
+
+
 
 fn render_tabs(f: &mut Frame, app: &App, area: Rect) {
     let tabs = [Period::Today, Period::Week, Period::Days30, Period::Month];
@@ -306,7 +388,7 @@ fn render_content(f: &mut Frame, app: &App, area: Rect) -> u16 {
     };
 
     // Overview (full width, fixed height)
-    push(&mut vrows, &mut y, 5, RowKind::Overview);
+    push(&mut vrows, &mut y, 6, RowKind::Overview);
 
     if wide {
         // Daily | Projects
@@ -411,6 +493,7 @@ fn render_overview(f: &mut Frame, report: &Report, area: Rect) {
 
     let cost_str = fmt_cost(report.total_cost_usd);
     let cache_str = format!("{:.0}%", report.cache_hit_pct);
+    let dur_str = format_duration(report.total_duration_seconds);
 
     let lines = vec![
         Line::from(vec![
@@ -424,7 +507,9 @@ fn render_overview(f: &mut Frame, report: &Report, area: Rect) {
             Span::styled(report.total_sessions.to_string(), bold(Color::White)),
             Span::styled(" sessions   ", dim()),
             Span::styled(cache_str, bold(TEAL)),
-            Span::styled(" cache hit", dim()),
+            Span::styled(" cache hit   ", dim()),
+            Span::styled(dur_str, bold(BLUE)),
+            Span::styled(" active", dim()),
         ]),
         Line::from(vec![
             Span::styled(
@@ -434,6 +519,17 @@ fn render_overview(f: &mut Frame, report: &Report, area: Rect) {
                     fmt_tok(report.total_tokens.output_tokens),
                     fmt_tok(report.total_tokens.cache_read_tokens),
                     fmt_tok(report.total_tokens.cache_creation_tokens),
+                ),
+                dim(),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                format!(
+                    "{} files   +{}  -{}  lines",
+                    report.total_files_changed,
+                    report.total_lines_added,
+                    report.total_lines_removed,
                 ),
                 dim(),
             ),
