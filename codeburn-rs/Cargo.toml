@@ -1,0 +1,27 @@
+[package]
+name = "codeburn"
+version = "0.1.0"
+edition = "2024"
+description = "See where your AI coding tokens go -- with timing, file changes, and code diff stats"
+license = "MIT"
+
+[[bin]]
+name = "codeburn"
+path = "src/main.rs"
+
+[lib]
+name = "codeburn"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+colored = "3.0"
+dirs = "6.0"
+glob = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
