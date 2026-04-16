@@ -211,6 +211,7 @@ pub struct ParsedApiCall {
     pub file_paths: Vec<String>,
     pub lines_added: u64,
     pub lines_removed: u64,
+    pub bash_duration_seconds: f64,
     pub deduplication_key: String,
 }
 
@@ -239,6 +240,7 @@ pub struct SessionSummary {
     pub total_lines_added: u64,
     pub total_lines_removed: u64,
     pub duration_seconds: f64,
+    pub bash_duration_seconds: f64,
     pub model_breakdown: Vec<(String, ModelStats)>,
     pub tool_breakdown: Vec<(String, u64)>,
     pub mcp_breakdown: Vec<(String, u64)>,
@@ -267,6 +269,7 @@ pub struct ProjectSummary {
     pub total_lines_added: u64,
     pub total_lines_removed: u64,
     pub total_duration_seconds: f64,
+    pub bash_duration_seconds: f64,
 }
 
 #[derive(Debug)]
@@ -277,6 +280,7 @@ pub struct Report {
     pub total_sessions: u64,
     pub total_tokens: TokenUsage,
     pub total_duration_seconds: f64,
+    pub bash_duration_seconds: f64,
     pub total_files_changed: u64,
     pub total_lines_added: u64,
     pub total_lines_removed: u64,

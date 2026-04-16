@@ -414,6 +414,7 @@ fn parse_opencode_session(
             lines_added: 0,
             lines_removed: 0,
             speed: String::new(),
+            bash_duration_seconds: 0.0,
             timestamp: parse_timestamp(*time_created),
             deduplication_key: dedup_key,
             user_message: std::mem::take(&mut current_user_message),

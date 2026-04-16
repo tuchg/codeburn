@@ -239,6 +239,7 @@ impl Provider for GeminiProvider {
                 lines_added: 0,
                 lines_removed: 0,
                 speed: String::new(),
+                bash_duration_seconds: 0.0,
                 timestamp,
                 deduplication_key: dedup_key,
                 user_message: last_user_message.clone(),

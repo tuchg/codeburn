@@ -296,6 +296,7 @@ impl Provider for PiProvider {
                 lines_added: 0,
                 lines_removed: 0,
                 speed: String::new(),
+                bash_duration_seconds: 0.0,
                 timestamp,
                 deduplication_key: dedup_key,
                 user_message: std::mem::take(&mut pending_user_message),

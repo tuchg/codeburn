@@ -1064,3 +1064,132 @@ fn test_provider_kind_cli_parsing() {
     assert!(ProviderKind::from_str("pi", true).is_ok());
     assert!(ProviderKind::from_str("unknown-provider", true).is_err());
 }
+
+// ==================== Claude Provider - bash_duration_seconds ====================
+
+fn make_claude_session(dir: &Path, filename: &str, lines: &[String]) {
+    let session_dir = dir.join("projects").join("test-project");
+    fs::create_dir_all(&session_dir).unwrap();
+    fs::write(session_dir.join(filename), lines.join("\n") + "\n").unwrap();
+}
+
+fn claude_user_entry(ts: &str, text: &str) -> String {
+    serde_json::json!({
+        "type": "user",
+        "timestamp": ts,
+        "message": {"role": "user", "content": text}
+    })
+    .to_string()
+}
+
+fn claude_assistant_with_tool_use(msg_id: &str, ts: &str, model: &str) -> String {
+    serde_json::json!({
+        "type": "assistant",
+        "timestamp": ts,
+        "message": {
+            "id": msg_id,
+            "role": "assistant",
+            "model": model,
+            "content": [
+                {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "git status"}}
+            ],
+            "usage": {"input_tokens": 100, "output_tokens": 30}
+        }
+    })
+    .to_string()
+}
+
+fn claude_user_tool_result(ts: &str) -> String {
+    serde_json::json!({
+        "type": "user",
+        "timestamp": ts,
+        "message": {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": "On branch main"}
+            ]
+        }
+    })
+    .to_string()
+}
+
+fn claude_assistant_text(msg_id: &str, ts: &str, model: &str) -> String {
+    serde_json::json!({
+        "type": "assistant",
+        "timestamp": ts,
+        "message": {
+            "id": msg_id,
+            "role": "assistant",
+            "model": model,
+            "content": [{"type": "text", "text": "done"}],
+            "usage": {"input_tokens": 200, "output_tokens": 15}
+        }
+    })
+    .to_string()
+}
+
+#[test]
+fn test_claude_bash_duration_from_tool_result_timestamp() {
+    let tmp = tempdir();
+    make_claude_session(
+        &tmp,
+        "sess-dur.jsonl",
+        &[
+            // User sends message at T=0
+            claude_user_entry("2026-04-16T10:00:00Z", "run git status"),
+            // Assistant issues tool_use at T=2s
+            claude_assistant_with_tool_use("msg-1", "2026-04-16T10:00:02Z", "claude-sonnet-4-5"),
+            // tool_result comes back at T=35s -> bash execution took 33s
+            claude_user_tool_result("2026-04-16T10:00:35Z"),
+            // Assistant gives final text response
+            claude_assistant_text("msg-2", "2026-04-16T10:00:37Z", "claude-sonnet-4-5"),
+        ],
+    );
+
+    let provider = codeburn_core::providers::claude::ClaudeProvider::new(tmp.clone());
+    let sessions = provider.discover_sessions();
+    assert_eq!(sessions.len(), 1);
+    let mut seen = HashSet::new();
+    let calls = provider.parse_session(&sessions[0], &mut seen);
+
+    // The first assistant call (msg-1) issued tool_use and should have bash_duration_seconds = 33
+    let call_with_bash = calls
+        .iter()
+        .find(|c| c.deduplication_key.contains("msg-1"))
+        .expect("msg-1 not found");
+    assert!(
+        (call_with_bash.bash_duration_seconds - 33.0).abs() < 1.0,
+        "expected ~33s bash duration, got {}",
+        call_with_bash.bash_duration_seconds
+    );
+
+    // The second assistant call (text-only) should have bash_duration_seconds = 0
+    let call_text = calls
+        .iter()
+        .find(|c| c.deduplication_key.contains("msg-2"))
+        .expect("msg-2 not found");
+    assert_eq!(call_text.bash_duration_seconds, 0.0);
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn test_claude_no_bash_duration_without_tool_result() {
+    let tmp = tempdir();
+    make_claude_session(
+        &tmp,
+        "sess-notools.jsonl",
+        &[
+            claude_user_entry("2026-04-16T10:00:00Z", "hello"),
+            claude_assistant_text("msg-plain", "2026-04-16T10:00:01Z", "claude-sonnet-4-5"),
+        ],
+    );
+
+    let provider = codeburn_core::providers::claude::ClaudeProvider::new(tmp.clone());
+    let sessions = provider.discover_sessions();
+    let mut seen = HashSet::new();
+    let calls = provider.parse_session(&sessions[0], &mut seen);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].bash_duration_seconds, 0.0);
+    let _ = fs::remove_dir_all(&tmp);
+}

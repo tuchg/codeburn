@@ -46,6 +46,7 @@ fn project_map_to_summaries(
             let total_added: u64 = sessions.iter().map(|s| s.total_lines_added).sum();
             let total_removed: u64 = sessions.iter().map(|s| s.total_lines_removed).sum();
             let total_duration: f64 = sessions.iter().map(|s| s.duration_seconds).sum();
+            let bash_duration: f64 = sessions.iter().map(|s| s.bash_duration_seconds).sum();
 
             ProjectSummary {
                 project_path: unsanitize_path(&name),
@@ -57,6 +58,7 @@ fn project_map_to_summaries(
                 total_lines_added: total_added,
                 total_lines_removed: total_removed,
                 total_duration_seconds: total_duration,
+                bash_duration_seconds: bash_duration,
             }
         })
         .collect()
@@ -73,6 +75,7 @@ fn build_session_summary(
     let mut all_files: HashSet<String> = HashSet::new();
     let mut total_added: u64 = 0;
     let mut total_removed: u64 = 0;
+    let mut bash_duration = 0.0f64;
     let mut first_ts = String::new();
     let mut last_ts = String::new();
     let mut category_map: HashMap<String, CategoryStats> = HashMap::new();
@@ -100,6 +103,7 @@ fn build_session_summary(
             api_calls += 1;
             total_added += call.lines_added;
             total_removed += call.lines_removed;
+            bash_duration += call.bash_duration_seconds;
 
             for path in &call.file_paths {
                 all_files.insert(path.clone());
@@ -164,6 +168,7 @@ fn build_session_summary(
         total_lines_added: total_added,
         total_lines_removed: total_removed,
         duration_seconds,
+        bash_duration_seconds: bash_duration,
         model_breakdown,
         tool_breakdown,
         mcp_breakdown,
@@ -236,6 +241,7 @@ fn merge_into_dashmap(map: &DashMap<String, ProjectSummary>, p: ProjectSummary) 
             existing.total_lines_added += p.total_lines_added;
             existing.total_lines_removed += p.total_lines_removed;
             existing.total_duration_seconds += p.total_duration_seconds;
+            existing.bash_duration_seconds += p.bash_duration_seconds;
         }
         dashmap::mapref::entry::Entry::Vacant(e) => {
             e.insert(p);
@@ -347,6 +353,7 @@ fn parse_provider_sessions(
                 file_paths: call.file_paths.clone(),
                 lines_added: call.lines_added,
                 lines_removed: call.lines_removed,
+                bash_duration_seconds: call.bash_duration_seconds,
                 deduplication_key: call.deduplication_key.clone(),
             };
 

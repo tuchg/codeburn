@@ -200,11 +200,28 @@ impl Provider for ClaudeProvider {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let mut result = Vec::new();
+        let mut result: Vec<ParsedProviderCall> = Vec::new();
         let mut current_user_msg = String::new();
+        // Track the timestamp of the last assistant entry that issued tool_use blocks,
+        // and which result index it produced, so we can compute bash wall-clock time
+        // when the following user entry returns the tool_result.
+        let mut pending_tool_use_ts: Option<String> = None;
+        let mut pending_call_idx: Option<usize> = None;
 
         for entry in &entries {
             if entry.entry_type == "user" {
+                // If this user entry contains tool_results, compute bash execution time
+                // as the delta between when the tool_use was issued and now.
+                if let (Some(idx), Some(tool_ts)) =
+                    (pending_call_idx.take(), pending_tool_use_ts.take())
+                    && entry_has_tool_result(entry)
+                    && let (Some(result_ts), Some(call)) =
+                        (entry.timestamp.as_deref(), result.get_mut(idx))
+                {
+                    call.bash_duration_seconds +=
+                        crate::timing::calculate_duration(&tool_ts, result_ts);
+                }
+
                 let text = get_user_message(entry);
                 if !text.trim().is_empty() {
                     current_user_msg = text;
@@ -219,7 +236,15 @@ impl Provider for ClaudeProvider {
                 if let Some(call) =
                     parse_entry(entry, &current_user_msg, &session_id)
                 {
+                    let idx = result.len();
                     result.push(call);
+                    // Track pending tool_use only if this assistant entry issued tool_use blocks.
+                    if entry_has_tool_use(entry)
+                        && let Some(ts) = &entry.timestamp
+                    {
+                        pending_tool_use_ts = Some(ts.clone());
+                        pending_call_idx = Some(idx);
+                    }
                 }
             }
         }
@@ -302,6 +327,36 @@ fn find_desktop_project_dirs(base: &Path, depth: u32) -> Vec<(PathBuf, String)> 
         }
     }
     results
+}
+
+fn entry_has_tool_use(entry: &JournalEntry) -> bool {
+    let msg = match &entry.message {
+        Some(m) => m,
+        None => return false,
+    };
+    msg.get("content")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter().any(|b| {
+                b.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn entry_has_tool_result(entry: &JournalEntry) -> bool {
+    let msg = match &entry.message {
+        Some(m) => m,
+        None => return false,
+    };
+    msg.get("content")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter().any(|b| {
+                b.get("type").and_then(|t| t.as_str()) == Some("tool_result")
+            })
+        })
+        .unwrap_or(false)
 }
 
 fn get_user_message(entry: &JournalEntry) -> String {
@@ -527,6 +582,7 @@ fn parse_entry(
         lines_added,
         lines_removed,
         speed: speed.to_string(),
+        bash_duration_seconds: 0.0,
         timestamp: entry.timestamp.clone().unwrap_or_default(),
         deduplication_key,
         user_message: user_message.to_string(),

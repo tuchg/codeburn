@@ -300,6 +300,7 @@ fn parse_cursor_db(db_path: &str, seen_keys: &mut HashSet<String>) -> Vec<Parsed
             lines_added: 0,
             lines_removed: 0,
             speed: String::new(),
+            bash_duration_seconds: 0.0,
             timestamp: ts,
             deduplication_key: dedup_key,
             user_message: user_msg,

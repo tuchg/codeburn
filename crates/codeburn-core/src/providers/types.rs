@@ -24,6 +24,7 @@ pub struct ParsedProviderCall {
     pub lines_added: u64,
     pub lines_removed: u64,
     pub speed: String,
+    pub bash_duration_seconds: f64,
     pub timestamp: String,
     pub deduplication_key: String,
     pub user_message: String,

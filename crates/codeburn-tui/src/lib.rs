@@ -494,6 +494,11 @@ fn render_overview(f: &mut Frame, report: &Report, area: Rect) {
     let cost_str = fmt_cost(report.total_cost_usd);
     let cache_str = format!("{:.0}%", report.cache_hit_pct);
     let dur_str = format_duration(report.total_duration_seconds);
+    let bash_dur_str = if report.bash_duration_seconds > 0.0 {
+        format!("   {}  shell", format_duration(report.bash_duration_seconds))
+    } else {
+        String::new()
+    };
 
     let lines = vec![
         Line::from(vec![
@@ -510,6 +515,7 @@ fn render_overview(f: &mut Frame, report: &Report, area: Rect) {
             Span::styled(" cache hit   ", dim()),
             Span::styled(dur_str, bold(BLUE)),
             Span::styled(" active", dim()),
+            Span::styled(bash_dur_str, bold(ORANGE)),
         ]),
         Line::from(vec![
             Span::styled(

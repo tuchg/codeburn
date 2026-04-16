@@ -72,10 +72,16 @@ pub fn print_report(report: &Report) {
         format_tokens(report.total_tokens.cache_creation_tokens).dimmed(),
     );
     if report.total_duration_seconds > 0.0 {
-        println!(
-            "  Duration: {}",
-            format_duration(report.total_duration_seconds).cyan().bold(),
-        );
+        let duration_str = format_duration(report.total_duration_seconds).cyan().bold();
+        if report.bash_duration_seconds > 0.0 {
+            println!(
+                "  Duration: {}  Shell time: {}",
+                duration_str,
+                format_duration(report.bash_duration_seconds).yellow().bold(),
+            );
+        } else {
+            println!("  Duration: {}", duration_str);
+        }
     }
     println!();
 

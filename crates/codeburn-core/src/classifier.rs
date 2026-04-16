@@ -372,6 +372,7 @@ mod tests {
                 file_paths: vec![],
                 lines_added: 0,
                 lines_removed: 0,
+                bash_duration_seconds: 0.0,
                 deduplication_key: "".into(),
             },
             ParsedApiCall {
@@ -386,6 +387,7 @@ mod tests {
                 file_paths: vec![],
                 lines_added: 0,
                 lines_removed: 0,
+                bash_duration_seconds: 0.0,
                 deduplication_key: "".into(),
             },
             ParsedApiCall {
@@ -400,6 +402,7 @@ mod tests {
                 file_paths: vec![],
                 lines_added: 0,
                 lines_removed: 0,
+                bash_duration_seconds: 0.0,
                 deduplication_key: "".into(),
             },
         ];

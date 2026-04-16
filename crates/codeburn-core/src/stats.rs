@@ -8,6 +8,7 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
     let mut total_sessions: u64 = 0;
     let mut total_tokens = TokenUsage::default();
     let mut total_duration = 0.0;
+    let mut bash_duration = 0.0f64;
     let mut total_files: u64 = 0;
     let mut total_added: u64 = 0;
     let mut total_removed: u64 = 0;
@@ -24,6 +25,7 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
         total_added += project.total_lines_added;
         total_removed += project.total_lines_removed;
         total_duration += project.total_duration_seconds;
+        bash_duration += project.bash_duration_seconds;
         total_sessions += project.sessions.len() as u64;
 
         for session in &project.sessions {
@@ -91,6 +93,7 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
         total_sessions,
         total_tokens,
         total_duration_seconds: total_duration,
+        bash_duration_seconds: bash_duration,
         total_files_changed: total_files,
         total_lines_added: total_added,
         total_lines_removed: total_removed,
