@@ -283,7 +283,6 @@ fn parse_cursor_db(db_path: &str, seen_keys: &mut HashSet<String>) -> Vec<Parsed
         }
 
         results.push(ParsedProviderCall {
-            provider: "cursor".to_string(),
             model: display_model,
             input_tokens: input,
             output_tokens: output,
@@ -296,7 +295,6 @@ fn parse_cursor_db(db_path: &str, seen_keys: &mut HashSet<String>) -> Vec<Parsed
             tools: cursor_tools,
             bash_commands: vec![],
             timestamp: ts,
-            speed: "standard".to_string(),
             deduplication_key: dedup_key,
             user_message: user_msg,
             session_id: conv_id,

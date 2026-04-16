@@ -380,7 +380,6 @@ impl Provider for CodexProvider {
                 );
 
                 calls.push(ParsedProviderCall {
-                    provider: "codex".to_string(),
                     model,
                     input_tokens: uncached_input,
                     output_tokens,
@@ -393,7 +392,6 @@ impl Provider for CodexProvider {
                     tools: std::mem::take(&mut pending_tools),
                     bash_commands: vec![],
                     timestamp,
-                    speed: "standard".to_string(),
                     deduplication_key: dedup_key,
                     user_message: std::mem::take(&mut pending_user_msg),
                     session_id: session_id.clone(),

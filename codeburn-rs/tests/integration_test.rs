@@ -25,7 +25,8 @@ fn test_parse_and_report() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     assert_eq!(projects.len(), 1);
 
     let project = &projects[0];
@@ -47,7 +48,8 @@ fn test_file_change_tracking() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     let session = &projects[0].sessions[0];
 
     let mut files: Vec<&str> = session.files_changed.iter().map(|s| s.as_str()).collect();
@@ -68,7 +70,8 @@ fn test_code_diff_counting() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     let session = &projects[0].sessions[0];
 
     // Edit: old_string "// placeholder" (1 line removed), new_string "function login() {\n  return true\n}" (3 lines added)
@@ -87,7 +90,8 @@ fn test_session_duration() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     let session = &projects[0].sessions[0];
 
     // From 00:00:15 to 00:05:10 = 295 seconds (4m 55s)
@@ -105,7 +109,8 @@ fn test_category_classification() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     let report = codeburn::stats::build_report(&projects, "Test");
 
     let categories: Vec<&str> = report.category_breakdown.iter().map(|(c, _)| c.as_str()).collect();
@@ -123,7 +128,8 @@ fn test_empty_directory() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     assert!(projects.is_empty());
 }
 
@@ -138,7 +144,8 @@ fn test_date_range_filtering() {
         end: chrono::NaiveDate::from_ymd_opt(2025, 1, 2).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     assert!(projects.is_empty(), "Expected no projects for out-of-range date");
 }
 
@@ -168,7 +175,8 @@ fn test_deduplication() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     assert_eq!(projects.len(), 1);
     // Should only count 1 API call due to deduplication
     assert_eq!(projects[0].total_api_calls, 1);
@@ -296,7 +304,8 @@ fn test_codex_session_discovery() {
     // Use a non-existent claude dir since we're testing codex only
     let claude_dir = tmp.join("nonexistent-claude");
     fs::create_dir_all(claude_dir.join("projects")).unwrap();
-    let projects = codeburn::parser::discover_and_parse(&claude_dir, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", claude_dir.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
 
     assert!(
         !projects.is_empty(),
@@ -330,7 +339,8 @@ fn test_codex_tool_name_mapping() {
 
     let claude_dir = tmp.join("nonexistent-claude");
     fs::create_dir_all(claude_dir.join("projects")).unwrap();
-    let projects = codeburn::parser::discover_and_parse(&claude_dir, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", claude_dir.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
 
     assert!(!projects.is_empty());
     let session = &projects[0].sessions[0];
@@ -373,7 +383,8 @@ fn test_codex_dedup_same_cumulative_total() {
 
     let claude_dir = tmp.join("nonexistent-claude");
     fs::create_dir_all(claude_dir.join("projects")).unwrap();
-    let projects = codeburn::parser::discover_and_parse(&claude_dir, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", claude_dir.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
 
     assert!(!projects.is_empty());
     // Should only produce 2 calls, not 3 (dedup by cumulative total)
@@ -410,7 +421,8 @@ fn test_codex_skips_non_codex_originator() {
 
     let claude_dir = tmp.join("nonexistent-claude");
     fs::create_dir_all(claude_dir.join("projects")).unwrap();
-    let projects = codeburn::parser::discover_and_parse(&claude_dir, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", claude_dir.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     assert!(projects.is_empty(), "Should skip non-codex session");
 
     unsafe { std::env::remove_var("CODEX_HOME"); }
@@ -434,7 +446,8 @@ fn test_bash_command_breakdown_in_session() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     assert_eq!(projects.len(), 1);
 
     let session = &projects[0].sessions[0];
@@ -465,7 +478,8 @@ fn test_mcp_breakdown_in_session() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     assert_eq!(projects.len(), 1);
 
     let session = &projects[0].sessions[0];
@@ -498,7 +512,8 @@ fn test_retry_and_oneshot_tracking() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     assert_eq!(projects.len(), 1);
 
     let session = &projects[0].sessions[0];
@@ -523,7 +538,8 @@ fn test_report_bash_and_mcp_aggregation() {
         end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
     };
 
-    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", tmp.to_str().unwrap()); }
+    let projects = codeburn::parser::discover_and_parse(&date_range, None);
     let report = codeburn::stats::build_report(&projects, "Test");
 
     // Bash breakdown in report

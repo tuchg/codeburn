@@ -4,13 +4,10 @@ mod display;
 mod export;
 mod models;
 mod parser;
-#[allow(dead_code)]
 mod providers;
 mod stats;
 mod timing;
 mod types;
-
-use std::path::PathBuf;
 
 use chrono::{Datelike, Local, NaiveDate};
 use clap::{Parser, Subcommand};
@@ -35,17 +32,30 @@ enum Commands {
         /// Period: today, week, 30days, month, all
         #[arg(short, long, default_value = "week")]
         period: String,
+        /// Filter to a specific provider (e.g. claude, codex, cursor, gemini, copilot, pi)
+        #[arg(long)]
+        provider: Option<String>,
     },
     /// Show today's usage
-    Today,
+    Today {
+        /// Filter to a specific provider
+        #[arg(long)]
+        provider: Option<String>,
+    },
     /// Show this month's usage
-    Month,
+    Month {
+        /// Filter to a specific provider
+        #[arg(long)]
+        provider: Option<String>,
+    },
     /// Export usage data to CSV
     Export {
         /// Output file path
         #[arg(short, long, default_value = "codeburn-report.csv")]
         output: String,
     },
+    /// List all supported providers
+    Providers,
 }
 
 fn get_date_range(period: &str) -> (DateRange, String) {
@@ -103,9 +113,14 @@ fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
+        Some(Commands::Providers) => {
+            let providers = providers::get_all_providers();
+            println!("Supported providers:");
+            for p in &providers {
+                println!("  {} ({})", p.display_name(), p.name());
+            }
+        }
         Some(Commands::Export { output }) => {
-            let claude_dir = get_claude_dir();
-
             let periods_config: Vec<(&str, &str)> = vec![
                 ("today", "Today"),
                 ("week", "7 Days"),
@@ -116,7 +131,7 @@ fn main() {
             let mut period_data: Vec<(String, Vec<types::ProjectSummary>)> = Vec::new();
             for (period, label) in &periods_config {
                 let (date_range, _) = get_date_range(period);
-                let projects = discover_and_parse(&claude_dir, &date_range);
+                let projects = discover_and_parse(&date_range, None);
                 period_data.push((label.to_string(), projects));
             }
 
@@ -135,30 +150,22 @@ fn main() {
             }
         }
         _ => {
-            let (period, _label) = match &cli.command {
-                Some(Commands::Report { period }) => (period.as_str(), None),
-                Some(Commands::Today) => ("today", None),
-                Some(Commands::Month) => ("month", None),
-                None => ("week", None),
-                Some(Commands::Export { .. }) => unreachable!(),
+            let (period, provider_filter, _label) = match &cli.command {
+                Some(Commands::Report { period, provider }) => {
+                    (period.as_str(), provider.as_deref(), None)
+                }
+                Some(Commands::Today { provider }) => ("today", provider.as_deref(), None),
+                Some(Commands::Month { provider }) => ("month", provider.as_deref(), None),
+                None => ("week", None, None),
+                Some(Commands::Export { .. }) | Some(Commands::Providers) => unreachable!(),
             };
 
             let (date_range, period_label) = get_date_range(period);
             let label = _label.unwrap_or(period_label);
 
-            let claude_dir = get_claude_dir();
-            let projects = discover_and_parse(&claude_dir, &date_range);
+            let projects = discover_and_parse(&date_range, provider_filter);
             let report = stats::build_report(&projects, &label);
             display::print_report(&report);
         }
     }
-}
-
-fn get_claude_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
-        return PathBuf::from(dir);
-    }
-    dirs::home_dir()
-        .map(|h| h.join(".claude"))
-        .unwrap_or_else(|| PathBuf::from(".claude"))
 }

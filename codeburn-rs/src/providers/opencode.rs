@@ -395,7 +395,6 @@ fn parse_opencode_session(
         }
 
         results.push(ParsedProviderCall {
-            provider: "opencode".to_string(),
             model,
             input_tokens: input,
             output_tokens: output,
@@ -408,7 +407,6 @@ fn parse_opencode_session(
             tools,
             bash_commands: bash_cmds,
             timestamp: parse_timestamp(*time_created),
-            speed: "standard".to_string(),
             deduplication_key: dedup_key,
             user_message: std::mem::take(&mut current_user_message),
             session_id: session_id.to_string(),

@@ -587,35 +587,40 @@ fn project_map_to_summaries(
         .collect()
 }
 
-/// Discover and parse all provider sessions, merging into unified project list
-pub fn discover_and_parse(claude_dir: &Path, date_range: &DateRange) -> Vec<ProjectSummary> {
+fn get_claude_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
+        return PathBuf::from(dir);
+    }
+    dirs::home_dir()
+        .map(|h| h.join(".claude"))
+        .unwrap_or_else(|| PathBuf::from(".claude"))
+}
+
+/// Discover and parse all provider sessions, merging into unified project list.
+/// If `provider_filter` is Some, only that provider is queried (use "claude" for Claude).
+pub fn discover_and_parse(date_range: &DateRange, provider_filter: Option<&str>) -> Vec<ProjectSummary> {
+    let claude_dir = get_claude_dir();
     let mut all_projects: HashMap<String, ProjectSummary> = HashMap::new();
 
-    // Claude sessions (full parsing with turn grouping, file changes, etc.)
-    for p in discover_claude_sessions(claude_dir, date_range) {
-        merge_project(&mut all_projects, p);
+    let include_claude = provider_filter.is_none() || provider_filter == Some("claude");
+    if include_claude {
+        for p in discover_claude_sessions(&claude_dir, date_range) {
+            merge_project(&mut all_projects, p);
+        }
     }
 
-    // Codex sessions via provider
-    let codex_provider = crate::providers::codex::CodexProvider::new(
-        crate::providers::codex::CodexProvider::default_dir(),
-    );
-    for p in parse_provider_sessions(&codex_provider, date_range) {
-        merge_project(&mut all_projects, p);
-    }
+    let providers: Vec<Box<dyn crate::providers::types::Provider>> = match provider_filter {
+        Some(name) if name != "claude" => {
+            crate::providers::get_provider(name).into_iter().collect()
+        }
+        _ if provider_filter.is_none() => crate::providers::get_all_providers(),
+        _ => Vec::new(),
+    };
 
-    // Cursor sessions via provider
-    let cursor_provider = crate::providers::cursor::CursorProvider::new(None);
-    for p in parse_provider_sessions(&cursor_provider, date_range) {
-        merge_project(&mut all_projects, p);
-    }
-
-    // OpenCode sessions via provider
-    let opencode_provider = crate::providers::opencode::OpenCodeProvider::new(
-        crate::providers::opencode::OpenCodeProvider::default_dir(),
-    );
-    for p in parse_provider_sessions(&opencode_provider, date_range) {
-        merge_project(&mut all_projects, p);
+    for provider in providers {
+        for p in parse_provider_sessions(provider.as_ref(), date_range) {
+            merge_project(&mut all_projects, p);
+        }
     }
 
     let mut projects: Vec<ProjectSummary> = all_projects.into_values().collect();
@@ -681,10 +686,16 @@ fn parse_provider_sessions(
                 }
             }
 
-            // Convert to ParsedApiCall
+            // Convert to ParsedApiCall, applying provider-specific display name mappings
+            let model_display = provider.model_display_name(&call.model);
+            let mapped_tools: Vec<String> = call
+                .tools
+                .iter()
+                .map(|t| provider.tool_display_name(t))
+                .collect();
             let api_call = ParsedApiCall {
-                provider: call.provider.clone(),
-                model: call.model.clone(),
+                provider: provider.name().to_string(),
+                model: model_display,
                 usage: TokenUsage {
                     input_tokens: call.input_tokens,
                     output_tokens: call.output_tokens,
@@ -695,7 +706,7 @@ fn parse_provider_sessions(
                     web_search_requests: call.web_search_requests,
                 },
                 cost_usd: call.cost_usd,
-                tools: call.tools.clone(),
+                tools: mapped_tools,
                 mcp_tools: extract_mcp_tools(&call.tools),
                 bash_commands: call.bash_commands.clone(),
                 timestamp: call.timestamp.clone(),
@@ -721,7 +732,7 @@ fn parse_provider_sessions(
 
             let key = format!(
                 "{}:{}:{}",
-                call.provider, call.session_id, source.project
+                source.provider, call.session_id, source.project
             );
 
             turn_map

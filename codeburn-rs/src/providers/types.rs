@@ -4,13 +4,11 @@
 pub struct SessionSource {
     pub path: String,
     pub project: String,
-    #[allow(dead_code)]
     pub provider: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct ParsedProviderCall {
-    pub provider: String,
     pub model: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -23,8 +21,6 @@ pub struct ParsedProviderCall {
     pub tools: Vec<String>,
     pub bash_commands: Vec<String>,
     pub timestamp: String,
-    #[allow(dead_code)]
-    pub speed: String,
     pub deduplication_key: String,
     pub user_message: String,
     pub session_id: String,
