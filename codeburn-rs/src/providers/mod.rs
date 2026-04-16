@@ -6,7 +6,7 @@ pub mod gemini;
 pub mod opencode;
 pub mod pi;
 
-pub fn get_all_providers() -> Vec<Box<dyn types::Provider>> {
+pub fn get_all_providers() -> Vec<Box<dyn types::Provider + Send + Sync>> {
     vec![
         Box::new(codex::CodexProvider::new(codex::CodexProvider::default_dir())),
         Box::new(cursor::CursorProvider::new(None)),
@@ -23,7 +23,7 @@ pub fn get_all_providers() -> Vec<Box<dyn types::Provider>> {
     ]
 }
 
-pub fn get_provider(name: &str) -> Option<Box<dyn types::Provider>> {
+pub fn get_provider(name: &str) -> Option<Box<dyn types::Provider + Send + Sync>> {
     match name {
         "codex" => Some(Box::new(codex::CodexProvider::new(
             codex::CodexProvider::default_dir(),

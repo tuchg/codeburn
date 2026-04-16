@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use chrono::DateTime;
+use rayon::prelude::*;
 
 use crate::bash_utils::{extract_bash_commands, is_bash_tool};
 use crate::classifier;
@@ -597,33 +599,47 @@ fn get_claude_dir() -> PathBuf {
 }
 
 /// Discover and parse all provider sessions, merging into unified project list.
-/// If `provider_filter` is Some, only that provider is queried (use "claude" for Claude).
-pub fn discover_and_parse(date_range: &DateRange, provider_filter: Option<&str>) -> Vec<ProjectSummary> {
+/// If `provider_filter` is Some, only that provider is queried.
+pub fn discover_and_parse(
+    date_range: &DateRange,
+    provider_filter: Option<&ProviderKind>,
+) -> Vec<ProjectSummary> {
     let claude_dir = get_claude_dir();
-    let mut all_projects: HashMap<String, ProjectSummary> = HashMap::new();
+    let all_projects: Mutex<HashMap<String, ProjectSummary>> = Mutex::new(HashMap::new());
 
-    let include_claude = provider_filter.is_none() || provider_filter == Some("claude");
+    let include_claude = provider_filter.is_none()
+        || provider_filter == Some(&ProviderKind::Claude);
+
+    // Claude is parsed specially (full turn grouping, file change tracking)
     if include_claude {
         for p in discover_claude_sessions(&claude_dir, date_range) {
-            merge_project(&mut all_projects, p);
+            merge_project(&mut all_projects.lock().unwrap(), p);
         }
     }
 
-    let providers: Vec<Box<dyn crate::providers::types::Provider>> = match provider_filter {
-        Some(name) if name != "claude" => {
-            crate::providers::get_provider(name).into_iter().collect()
-        }
-        _ if provider_filter.is_none() => crate::providers::get_all_providers(),
-        _ => Vec::new(),
-    };
+    let providers: Vec<Box<dyn crate::providers::types::Provider + Send + Sync>> =
+        match provider_filter {
+            Some(kind) if *kind != ProviderKind::Claude => {
+                crate::providers::get_provider(kind.as_str()).into_iter().collect()
+            }
+            None => crate::providers::get_all_providers(),
+            _ => Vec::new(),
+        };
 
-    for provider in providers {
-        for p in parse_provider_sessions(provider.as_ref(), date_range) {
-            merge_project(&mut all_projects, p);
+    // Parse each non-Claude provider in parallel
+    providers.par_iter().for_each(|provider| {
+        let summaries = parse_provider_sessions(provider.as_ref(), date_range);
+        let mut map = all_projects.lock().unwrap();
+        for p in summaries {
+            merge_project(&mut map, p);
         }
-    }
+    });
 
-    let mut projects: Vec<ProjectSummary> = all_projects.into_values().collect();
+    let mut projects: Vec<ProjectSummary> = all_projects
+        .into_inner()
+        .unwrap()
+        .into_values()
+        .collect();
     projects.sort_by(|a, b| b.total_cost_usd.partial_cmp(&a.total_cost_usd).unwrap());
     projects
 }

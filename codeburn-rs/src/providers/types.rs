@@ -26,7 +26,7 @@ pub struct ParsedProviderCall {
     pub session_id: String,
 }
 
-pub trait Provider {
+pub trait Provider: Send + Sync {
     fn name(&self) -> &str;
     fn display_name(&self) -> &str;
     fn model_display_name(&self, model: &str) -> String;

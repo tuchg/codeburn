@@ -1,5 +1,51 @@
 use chrono::NaiveDate;
+use clap::ValueEnum;
 use serde::Deserialize;
+
+/// Represents a reporting period for the CLI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum Period {
+    /// Last 7 days
+    #[default]
+    Week,
+    /// Today only
+    Today,
+    /// Last 30 days
+    #[value(name = "30days")]
+    Days30,
+    /// Current calendar month
+    Month,
+    /// All time
+    All,
+}
+
+/// Known AI coding providers. "Unknown" carries the raw string for pass-through.
+#[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
+#[non_exhaustive]
+pub enum ProviderKind {
+    Claude,
+    Codex,
+    Cursor,
+    Opencode,
+    Gemini,
+    Copilot,
+    Pi,
+}
+
+impl ProviderKind {
+    /// Returns the canonical lowercase identifier used in provider registries.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProviderKind::Claude => "claude",
+            ProviderKind::Codex => "codex",
+            ProviderKind::Cursor => "cursor",
+            ProviderKind::Opencode => "opencode",
+            ProviderKind::Gemini => "gemini",
+            ProviderKind::Copilot => "copilot",
+            ProviderKind::Pi => "pi",
+        }
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]

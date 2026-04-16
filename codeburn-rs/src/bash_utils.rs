@@ -71,7 +71,7 @@ pub fn extract_bash_commands(command: &str) -> Vec<String> {
 }
 
 /// Set of tool names that represent bash execution
-pub const BASH_TOOL_NAMES: &[&str] = &["Bash", "BashTool", "PowerShellTool"];
+pub const BASH_TOOL_NAMES: &[&str] = &["Bash", "bash", "BashTool", "PowerShellTool"];
 
 pub fn is_bash_tool(name: &str) -> bool {
     BASH_TOOL_NAMES.contains(&name)

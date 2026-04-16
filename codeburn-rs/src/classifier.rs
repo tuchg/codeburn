@@ -4,7 +4,9 @@ use crate::bash_utils::is_bash_tool;
 
 const EDIT_TOOLS: &[&str] = &[
     "Edit",
+    "edit",
     "Write",
+    "write",
     "FileEditTool",
     "FileWriteTool",
     "NotebookEdit",
@@ -13,8 +15,11 @@ const EDIT_TOOLS: &[&str] = &[
 
 const READ_TOOLS: &[&str] = &[
     "Read",
+    "read",
     "Grep",
+    "grep",
     "Glob",
+    "glob",
     "FileReadTool",
     "GrepTool",
     "GlobTool",
