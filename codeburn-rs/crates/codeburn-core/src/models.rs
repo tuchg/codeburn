@@ -72,6 +72,17 @@ fn get_model_costs(model: &str) -> Option<&'static ModelCosts> {
     None
 }
 
+/// Input parameters for cost calculation.
+pub struct CostInput<'a> {
+    pub model: &'a str,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub web_search_requests: u64,
+    pub speed: &'a str,
+}
+
 pub fn calculate_cost(
     model: &str,
     input_tokens: u64,
@@ -82,13 +93,15 @@ pub fn calculate_cost(
     speed: &str,
 ) -> f64 {
     calculate_cost_with_overrides(
-        model,
-        input_tokens,
-        output_tokens,
-        cache_creation_tokens,
-        cache_read_tokens,
-        web_search_requests,
-        speed,
+        &CostInput {
+            model,
+            input_tokens,
+            output_tokens,
+            cache_creation_tokens,
+            cache_read_tokens,
+            web_search_requests,
+            speed,
+        },
         &[],
     )
 }
@@ -96,51 +109,44 @@ pub fn calculate_cost(
 /// Calculate cost using custom pricing overrides. Overrides are checked first;
 /// if no override matches, the built-in FALLBACK_PRICING table is used.
 pub fn calculate_cost_with_overrides(
-    model: &str,
-    input_tokens: u64,
-    output_tokens: u64,
-    cache_creation_tokens: u64,
-    cache_read_tokens: u64,
-    web_search_requests: u64,
-    speed: &str,
+    input: &CostInput<'_>,
     overrides: &[PricingOverride],
 ) -> f64 {
-    let canonical = get_canonical_name(model);
+    let canonical = get_canonical_name(input.model);
 
-    // Check user overrides first (exact match on canonical name)
     for ovr in overrides {
         if canonical == ovr.model || canonical.starts_with(&format!("{}-", ovr.model)) {
-            let multiplier = if speed == "fast" {
+            let multiplier = if input.speed == "fast" {
                 ovr.fast_multiplier
             } else {
                 1.0
             };
             return multiplier
-                * (input_tokens as f64 * ovr.input
-                    + output_tokens as f64 * ovr.output
-                    + cache_creation_tokens as f64 * ovr.cache_write
-                    + cache_read_tokens as f64 * ovr.cache_read
-                    + web_search_requests as f64 * ovr.web_search);
+                * (input.input_tokens as f64 * ovr.input
+                    + input.output_tokens as f64 * ovr.output
+                    + input.cache_creation_tokens as f64 * ovr.cache_write
+                    + input.cache_read_tokens as f64 * ovr.cache_read
+                    + input.web_search_requests as f64 * ovr.web_search);
         }
     }
 
-    let costs = match get_model_costs(model) {
+    let costs = match get_model_costs(input.model) {
         Some(c) => c,
         None => return 0.0,
     };
 
-    let multiplier = if speed == "fast" {
+    let multiplier = if input.speed == "fast" {
         costs.fast_multiplier
     } else {
         1.0
     };
 
     multiplier
-        * (input_tokens as f64 * costs.input
-            + output_tokens as f64 * costs.output
-            + cache_creation_tokens as f64 * costs.cache_write
-            + cache_read_tokens as f64 * costs.cache_read
-            + web_search_requests as f64 * costs.web_search)
+        * (input.input_tokens as f64 * costs.input
+            + input.output_tokens as f64 * costs.output
+            + input.cache_creation_tokens as f64 * costs.cache_write
+            + input.cache_read_tokens as f64 * costs.cache_read
+            + input.web_search_requests as f64 * costs.web_search)
 }
 
 pub fn short_model_name(model: &str) -> String {
@@ -233,7 +239,16 @@ mod tests {
             fast_multiplier: 1.0,
         }];
         let cost = calculate_cost_with_overrides(
-            "unknown-model-xyz", 1000, 500, 0, 0, 0, "standard", &overrides,
+            &CostInput {
+                model: "unknown-model-xyz",
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                web_search_requests: 0,
+                speed: "standard",
+            },
+            &overrides,
         );
         // 1000 * 10e-6 + 500 * 20e-6 = 0.01 + 0.01 = 0.02
         assert!((cost - 0.02).abs() < 1e-10);
@@ -251,7 +266,16 @@ mod tests {
             fast_multiplier: 1.0,
         }];
         let cost = calculate_cost_with_overrides(
-            "claude-sonnet-4-6", 1000, 500, 0, 0, 0, "standard", &overrides,
+            &CostInput {
+                model: "claude-sonnet-4-6",
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                web_search_requests: 0,
+                speed: "standard",
+            },
+            &overrides,
         );
         assert!((cost - 0.0105).abs() < 1e-10);
     }

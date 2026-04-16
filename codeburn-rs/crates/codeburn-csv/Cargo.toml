@@ -1,0 +1,9 @@
+[package]
+name = "codeburn-csv"
+description = "CSV export for codeburn"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+codeburn-core = { path = "../codeburn-core" }

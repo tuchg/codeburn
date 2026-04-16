@@ -16,10 +16,10 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::classifier::category_label;
-use crate::parser::discover_and_parse;
-use crate::stats::build_report;
-use crate::types::{Period, ProviderKind, Report};
+use codeburn_core::classifier::category_label;
+use codeburn_core::parser::discover_and_parse;
+use codeburn_core::stats::build_report;
+use codeburn_core::types::{Period, ProviderKind, Report};
 
 // ──────────── Palette (matches TS dashboard) ────────────
 

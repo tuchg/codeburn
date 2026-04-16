@@ -1,8 +1,8 @@
 use colored::Colorize;
 
-use crate::classifier::category_label;
-use crate::timing::format_duration;
-use crate::types::Report;
+use codeburn_core::classifier::category_label;
+use codeburn_core::timing::format_duration;
+use codeburn_core::types::Report;
 
 fn format_cost(cost: f64) -> String {
     if cost >= 100.0 {

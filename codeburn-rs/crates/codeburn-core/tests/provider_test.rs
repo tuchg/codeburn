@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use codeburn::providers::types::Provider;
+use codeburn_core::providers::types::Provider;
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -23,7 +23,7 @@ fn tempdir() -> std::path::PathBuf {
 
 #[test]
 fn test_provider_registry_has_all_providers() {
-    let providers = codeburn::providers::get_all_providers();
+    let providers = codeburn_core::providers::get_all_providers();
     let names: Vec<&str> = providers.iter().map(|p| p.name()).collect();
     assert!(names.contains(&"codex"));
     assert!(names.contains(&"cursor"));
@@ -36,7 +36,7 @@ fn test_provider_registry_has_all_providers() {
 
 #[test]
 fn test_provider_display_names() {
-    let providers = codeburn::providers::get_all_providers();
+    let providers = codeburn_core::providers::get_all_providers();
     for p in &providers {
         assert!(!p.display_name().is_empty());
     }
@@ -56,14 +56,14 @@ fn test_provider_display_names() {
 
 #[test]
 fn test_get_provider_by_name() {
-    assert!(codeburn::providers::get_provider("codex").is_some());
-    assert!(codeburn::providers::get_provider("cursor").is_some());
-    assert!(codeburn::providers::get_provider("opencode").is_some());
-    assert!(codeburn::providers::get_provider("gemini").is_some());
-    assert!(codeburn::providers::get_provider("copilot").is_some());
-    assert!(codeburn::providers::get_provider("pi").is_some());
-    assert!(codeburn::providers::get_provider("nonexistent").is_none());
-    assert!(codeburn::providers::get_provider("claude").is_none());
+    assert!(codeburn_core::providers::get_provider("codex").is_some());
+    assert!(codeburn_core::providers::get_provider("cursor").is_some());
+    assert!(codeburn_core::providers::get_provider("opencode").is_some());
+    assert!(codeburn_core::providers::get_provider("gemini").is_some());
+    assert!(codeburn_core::providers::get_provider("copilot").is_some());
+    assert!(codeburn_core::providers::get_provider("pi").is_some());
+    assert!(codeburn_core::providers::get_provider("nonexistent").is_none());
+    assert!(codeburn_core::providers::get_provider("claude").is_none());
 }
 
 // ==================== Codex Provider ====================
@@ -151,7 +151,7 @@ fn create_codex_session(dir: &Path, date: &str, filename: &str, lines: &[String]
 #[test]
 fn test_codex_model_display_names() {
     let provider =
-        codeburn::providers::codex::CodexProvider::new(std::path::PathBuf::from("/tmp/fake"));
+        codeburn_core::providers::codex::CodexProvider::new(std::path::PathBuf::from("/tmp/fake"));
     assert_eq!(provider.model_display_name("gpt-5.4"), "GPT-5.4");
     assert_eq!(provider.model_display_name("gpt-5.4-mini"), "GPT-5.4 Mini");
     assert_eq!(provider.model_display_name("gpt-5.3-codex"), "GPT-5.3 Codex");
@@ -161,7 +161,7 @@ fn test_codex_model_display_names() {
 #[test]
 fn test_codex_tool_display_names() {
     let provider =
-        codeburn::providers::codex::CodexProvider::new(std::path::PathBuf::from("/tmp/fake"));
+        codeburn_core::providers::codex::CodexProvider::new(std::path::PathBuf::from("/tmp/fake"));
     assert_eq!(provider.tool_display_name("exec_command"), "Bash");
     assert_eq!(provider.tool_display_name("read_file"), "Read");
     assert_eq!(provider.tool_display_name("write_file"), "Edit");
@@ -183,7 +183,7 @@ fn test_codex_provider_discovers_sessions() {
         ],
     );
 
-    let provider = codeburn::providers::codex::CodexProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::codex::CodexProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, "codex");
@@ -207,7 +207,7 @@ fn test_codex_provider_parses_token_usage() {
         ],
     );
 
-    let provider = codeburn::providers::codex::CodexProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::codex::CodexProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert_eq!(sessions.len(), 1);
 
@@ -246,7 +246,7 @@ fn test_codex_provider_skips_duplicate_token_counts() {
         ],
     );
 
-    let provider = codeburn::providers::codex::CodexProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::codex::CodexProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
     let calls = provider.parse_session(&sessions[0], &mut seen);
@@ -259,7 +259,7 @@ fn test_codex_provider_skips_duplicate_token_counts() {
 #[test]
 fn test_codex_provider_returns_empty_for_nonexistent() {
     let provider =
-        codeburn::providers::codex::CodexProvider::new(std::path::PathBuf::from("/nonexistent/path"));
+        codeburn_core::providers::codex::CodexProvider::new(std::path::PathBuf::from("/nonexistent/path"));
     let sessions = provider.discover_sessions();
     assert!(sessions.is_empty());
 }
@@ -277,7 +277,7 @@ fn test_codex_provider_skips_non_codex_originator() {
         ],
     );
 
-    let provider = codeburn::providers::codex::CodexProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::codex::CodexProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert!(sessions.is_empty());
     let _ = fs::remove_dir_all(&tmp);
@@ -296,7 +296,7 @@ fn test_codex_provider_accepts_case_insensitive_originator() {
         ],
     );
 
-    let provider = codeburn::providers::codex::CodexProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::codex::CodexProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert_eq!(sessions.len(), 1);
     let _ = fs::remove_dir_all(&tmp);
@@ -306,7 +306,7 @@ fn test_codex_provider_accepts_case_insensitive_originator() {
 
 #[test]
 fn test_cursor_model_display_names() {
-    let provider = codeburn::providers::cursor::CursorProvider::new(None);
+    let provider = codeburn_core::providers::cursor::CursorProvider::new(None);
     assert_eq!(provider.model_display_name("default"), "Auto (Sonnet est.)");
     assert_eq!(provider.model_display_name("claude-4.5-opus-high-thinking"), "Opus 4.5 (Thinking)");
     assert_eq!(provider.model_display_name("claude-4-sonnet-thinking"), "Sonnet 4 (Thinking)");
@@ -319,13 +319,13 @@ fn test_cursor_model_display_names() {
 
 #[test]
 fn test_cursor_tool_display_names_are_identity() {
-    let provider = codeburn::providers::cursor::CursorProvider::new(None);
+    let provider = codeburn_core::providers::cursor::CursorProvider::new(None);
     assert_eq!(provider.tool_display_name("some_tool"), "some_tool");
 }
 
 #[test]
 fn test_cursor_registration() {
-    let provider = codeburn::providers::cursor::CursorProvider::new(None);
+    let provider = codeburn_core::providers::cursor::CursorProvider::new(None);
     assert_eq!(provider.name(), "cursor");
     assert_eq!(provider.display_name(), "Cursor");
 }
@@ -335,7 +335,7 @@ fn test_cursor_registration() {
 #[test]
 fn test_opencode_model_display_names() {
     let provider =
-        codeburn::providers::opencode::OpenCodeProvider::new(std::path::PathBuf::from("/tmp/fake"));
+        codeburn_core::providers::opencode::OpenCodeProvider::new(std::path::PathBuf::from("/tmp/fake"));
     assert_eq!(provider.model_display_name("anthropic/claude-opus-4-6-20260205"), "Opus 4.6");
     assert_eq!(provider.model_display_name("google/gemini-2.5-pro"), "Gemini 2.5 Pro");
     assert_eq!(provider.model_display_name("claude-sonnet-4-6"), "Sonnet 4.6");
@@ -344,7 +344,7 @@ fn test_opencode_model_display_names() {
 #[test]
 fn test_opencode_tool_display_names() {
     let provider =
-        codeburn::providers::opencode::OpenCodeProvider::new(std::path::PathBuf::from("/tmp/fake"));
+        codeburn_core::providers::opencode::OpenCodeProvider::new(std::path::PathBuf::from("/tmp/fake"));
     assert_eq!(provider.tool_display_name("bash"), "Bash");
     assert_eq!(provider.tool_display_name("edit"), "Edit");
     assert_eq!(provider.tool_display_name("read"), "Read");
@@ -359,14 +359,14 @@ fn test_opencode_tool_display_names() {
 #[test]
 fn test_opencode_registration() {
     let provider =
-        codeburn::providers::opencode::OpenCodeProvider::new(std::path::PathBuf::from("/tmp/fake"));
+        codeburn_core::providers::opencode::OpenCodeProvider::new(std::path::PathBuf::from("/tmp/fake"));
     assert_eq!(provider.name(), "opencode");
     assert_eq!(provider.display_name(), "OpenCode");
 }
 
 #[test]
 fn test_opencode_empty_on_nonexistent_dir() {
-    let provider = codeburn::providers::opencode::OpenCodeProvider::new(
+    let provider = codeburn_core::providers::opencode::OpenCodeProvider::new(
         std::path::PathBuf::from("/nonexistent/path/that/does/not/exist"),
     );
     let sessions = provider.discover_sessions();
@@ -378,7 +378,7 @@ fn test_opencode_empty_on_nonexistent_dir() {
 #[test]
 fn test_gemini_registration() {
     let provider =
-        codeburn::providers::gemini::GeminiProvider::new(std::path::PathBuf::from("/tmp/fake"));
+        codeburn_core::providers::gemini::GeminiProvider::new(std::path::PathBuf::from("/tmp/fake"));
     assert_eq!(provider.name(), "gemini");
     assert_eq!(provider.display_name(), "Gemini");
 }
@@ -386,7 +386,7 @@ fn test_gemini_registration() {
 #[test]
 fn test_gemini_empty_on_missing_projects_file() {
     let tmp = tempdir();
-    let provider = codeburn::providers::gemini::GeminiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::gemini::GeminiProvider::new(tmp.clone());
     assert!(provider.discover_sessions().is_empty());
     let _ = fs::remove_dir_all(&tmp);
 }
@@ -432,7 +432,7 @@ fn test_gemini_discovers_and_parses_sessions() {
     });
     fs::write(chats_dir.join("session-001.json"), session_json.to_string()).unwrap();
 
-    let provider = codeburn::providers::gemini::GeminiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::gemini::GeminiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, "gemini");
@@ -477,7 +477,7 @@ fn test_gemini_deduplicates_messages() {
     });
     fs::write(chats_dir.join("sess.json"), session_json.to_string()).unwrap();
 
-    let provider = codeburn::providers::gemini::GeminiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::gemini::GeminiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
     let calls = provider.parse_session(&sessions[0], &mut seen);
@@ -489,7 +489,7 @@ fn test_gemini_deduplicates_messages() {
 
 #[test]
 fn test_copilot_registration() {
-    let provider = codeburn::providers::copilot::CopilotProvider::new(
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(
         std::path::PathBuf::from("/tmp/fake"),
     );
     assert_eq!(provider.name(), "copilot");
@@ -498,7 +498,7 @@ fn test_copilot_registration() {
 
 #[test]
 fn test_copilot_model_display_names() {
-    let provider = codeburn::providers::copilot::CopilotProvider::new(
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(
         std::path::PathBuf::from("/tmp/fake"),
     );
     assert_eq!(provider.model_display_name("gpt-4.1"), "GPT-4.1");
@@ -514,7 +514,7 @@ fn test_copilot_model_display_names() {
 
 #[test]
 fn test_copilot_tool_display_names() {
-    let provider = codeburn::providers::copilot::CopilotProvider::new(
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(
         std::path::PathBuf::from("/tmp/fake"),
     );
     assert_eq!(provider.tool_display_name("bash"), "Bash");
@@ -525,7 +525,7 @@ fn test_copilot_tool_display_names() {
 
 #[test]
 fn test_copilot_empty_on_missing_dir() {
-    let provider = codeburn::providers::copilot::CopilotProvider::new(
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(
         std::path::PathBuf::from("/nonexistent/copilot"),
     );
     assert!(provider.discover_sessions().is_empty());
@@ -548,7 +548,7 @@ fn test_copilot_discovers_and_parses_sessions() {
     let events_jsonl = events.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n");
     fs::write(session_dir.join("events.jsonl"), events_jsonl).unwrap();
 
-    let provider = codeburn::providers::copilot::CopilotProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, "copilot");
@@ -573,7 +573,7 @@ fn test_copilot_discovers_and_parses_sessions() {
 #[test]
 fn test_pi_registration() {
     let provider =
-        codeburn::providers::pi::PiProvider::new(std::path::PathBuf::from("/tmp/fake"));
+        codeburn_core::providers::pi::PiProvider::new(std::path::PathBuf::from("/tmp/fake"));
     assert_eq!(provider.name(), "pi");
     assert_eq!(provider.display_name(), "Pi");
 }
@@ -581,7 +581,7 @@ fn test_pi_registration() {
 #[test]
 fn test_pi_model_display_names() {
     let provider =
-        codeburn::providers::pi::PiProvider::new(std::path::PathBuf::from("/tmp/fake"));
+        codeburn_core::providers::pi::PiProvider::new(std::path::PathBuf::from("/tmp/fake"));
     assert_eq!(provider.model_display_name("gpt-5"), "GPT-5");
     assert_eq!(provider.model_display_name("gpt-5.4"), "GPT-5.4");
     assert_eq!(provider.model_display_name("gpt-4o"), "GPT-4o");
@@ -591,7 +591,7 @@ fn test_pi_model_display_names() {
 #[test]
 fn test_pi_empty_on_missing_dir() {
     let provider =
-        codeburn::providers::pi::PiProvider::new(std::path::PathBuf::from("/nonexistent/pi"));
+        codeburn_core::providers::pi::PiProvider::new(std::path::PathBuf::from("/nonexistent/pi"));
     assert!(provider.discover_sessions().is_empty());
 }
 
@@ -620,7 +620,7 @@ fn test_pi_discovers_and_parses_sessions() {
     let content = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
     fs::write(session_dir.join("session.jsonl"), content).unwrap();
 
-    let provider = codeburn::providers::pi::PiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::pi::PiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, "pi");
@@ -652,7 +652,7 @@ fn test_pi_skips_non_session_first_line() {
     let content = serde_json::json!({"type": "message", "role": "user"}).to_string();
     fs::write(session_dir.join("session.jsonl"), content).unwrap();
 
-    let provider = codeburn::providers::pi::PiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::pi::PiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert!(sessions.is_empty(), "should skip files without session header");
     let _ = fs::remove_dir_all(&tmp);
@@ -680,7 +680,7 @@ fn test_pi_discovers_multiple_project_dirs() {
         fs::write(session_dir.join("session.jsonl"), lines.join("\n")).unwrap();
     }
 
-    let provider = codeburn::providers::pi::PiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::pi::PiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert_eq!(sessions.len(), 2);
     let mut projects: Vec<&str> = sessions.iter().map(|s| s.project.as_str()).collect();
@@ -696,7 +696,7 @@ fn test_pi_skips_non_jsonl_files() {
     fs::create_dir_all(&session_dir).unwrap();
     fs::write(session_dir.join("notes.txt"), "not a session").unwrap();
 
-    let provider = codeburn::providers::pi::PiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::pi::PiProvider::new(tmp.clone());
     assert!(provider.discover_sessions().is_empty());
     let _ = fs::remove_dir_all(&tmp);
 }
@@ -721,7 +721,7 @@ fn test_pi_skips_zero_token_messages() {
     ];
     fs::write(session_dir.join("session.jsonl"), lines.join("\n")).unwrap();
 
-    let provider = codeburn::providers::pi::PiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::pi::PiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
     let calls = provider.parse_session(&sessions[0], &mut seen);
@@ -754,7 +754,7 @@ fn test_pi_multi_turn_session() {
     ];
     fs::write(session_dir.join("session.jsonl"), lines.join("\n")).unwrap();
 
-    let provider = codeburn::providers::pi::PiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::pi::PiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
     let calls = provider.parse_session(&sessions[0], &mut seen);
@@ -783,7 +783,7 @@ fn test_pi_extracts_bash_commands() {
     ];
     fs::write(session_dir.join("session.jsonl"), lines.join("\n")).unwrap();
 
-    let provider = codeburn::providers::pi::PiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::pi::PiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
     let calls = provider.parse_session(&sessions[0], &mut seen);
@@ -808,7 +808,7 @@ fn test_pi_deduplication_across_parses() {
     ];
     fs::write(session_dir.join("session.jsonl"), lines.join("\n")).unwrap();
 
-    let provider = codeburn::providers::pi::PiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::pi::PiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
 
@@ -821,8 +821,8 @@ fn test_pi_deduplication_across_parses() {
 
 #[test]
 fn test_pi_handles_missing_session_file() {
-    let provider = codeburn::providers::pi::PiProvider::new(std::path::PathBuf::from("/tmp/fake-pi"));
-    let source = codeburn::providers::types::SessionSource {
+    let provider = codeburn_core::providers::pi::PiProvider::new(std::path::PathBuf::from("/tmp/fake-pi"));
+    let source = codeburn_core::providers::types::SessionSource {
         path: "/nonexistent/session.jsonl".to_string(),
         project: "test".to_string(),
         provider: "pi".to_string(),
@@ -872,7 +872,7 @@ fn test_copilot_tracks_model_changes() {
         copilot_assistant_msg("msg-2", 80, &[], "2026-04-15T10:01:00Z"),
     ], "/home/user/proj");
 
-    let provider = codeburn::providers::copilot::CopilotProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     assert_eq!(sessions.len(), 1);
     let mut seen = HashSet::new();
@@ -892,7 +892,7 @@ fn test_copilot_skips_zero_output_token_messages() {
         copilot_assistant_msg("msg-real", 42, &[], "2026-04-15T10:00:15Z"),
     ], "/home/user/proj");
 
-    let provider = codeburn::providers::copilot::CopilotProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
     let calls = provider.parse_session(&sessions[0], &mut seen);
@@ -909,7 +909,7 @@ fn test_copilot_deduplication_across_parses() {
         copilot_assistant_msg("msg-dup", 100, &[], "2026-04-15T10:00:10Z"),
     ], "/home/user/proj");
 
-    let provider = codeburn::providers::copilot::CopilotProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
 
@@ -922,8 +922,8 @@ fn test_copilot_deduplication_across_parses() {
 
 #[test]
 fn test_copilot_handles_missing_events_file() {
-    let provider = codeburn::providers::copilot::CopilotProvider::new(std::path::PathBuf::from("/tmp/fake-copilot"));
-    let source = codeburn::providers::types::SessionSource {
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(std::path::PathBuf::from("/tmp/fake-copilot"));
+    let source = codeburn_core::providers::types::SessionSource {
         path: "/nonexistent/events.jsonl".to_string(),
         project: "test".to_string(),
         provider: "copilot".to_string(),
@@ -941,7 +941,7 @@ fn test_copilot_extracts_tool_display_names() {
         copilot_assistant_msg("msg-t", 60, &["bash", "read_file", "write_file"], "2026-04-15T10:00:10Z"),
     ], "/home/user/proj");
 
-    let provider = codeburn::providers::copilot::CopilotProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::copilot::CopilotProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
     let calls = provider.parse_session(&sessions[0], &mut seen);
@@ -978,7 +978,7 @@ fn test_gemini_multi_message_session() {
     });
     fs::write(chats_dir.join("sess.json"), session_json.to_string()).unwrap();
 
-    let provider = codeburn::providers::gemini::GeminiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::gemini::GeminiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
     let calls = provider.parse_session(&sessions[0], &mut seen);
@@ -1014,7 +1014,7 @@ fn test_gemini_user_message_as_string() {
     });
     fs::write(chats_dir.join("sess.json"), session_json.to_string()).unwrap();
 
-    let provider = codeburn::providers::gemini::GeminiProvider::new(tmp.clone());
+    let provider = codeburn_core::providers::gemini::GeminiProvider::new(tmp.clone());
     let sessions = provider.discover_sessions();
     let mut seen = HashSet::new();
     let calls = provider.parse_session(&sessions[0], &mut seen);
@@ -1027,7 +1027,7 @@ fn test_gemini_user_message_as_string() {
 
 #[test]
 fn test_period_enum_values() {
-    use codeburn::types::Period;
+    use codeburn_core::types::Period;
     use clap::ValueEnum;
     // All periods must be expressible as CLI strings
     assert!(Period::from_str("week", true).is_ok());
@@ -1040,7 +1040,7 @@ fn test_period_enum_values() {
 
 #[test]
 fn test_provider_kind_as_str() {
-    use codeburn::types::ProviderKind;
+    use codeburn_core::types::ProviderKind;
     assert_eq!(ProviderKind::Claude.as_str(), "claude");
     assert_eq!(ProviderKind::Codex.as_str(), "codex");
     assert_eq!(ProviderKind::Cursor.as_str(), "cursor");
@@ -1052,7 +1052,7 @@ fn test_provider_kind_as_str() {
 
 #[test]
 fn test_provider_kind_cli_parsing() {
-    use codeburn::types::ProviderKind;
+    use codeburn_core::types::ProviderKind;
     use clap::ValueEnum;
     assert!(ProviderKind::from_str("claude", true).is_ok());
     assert!(ProviderKind::from_str("codex", true).is_ok());

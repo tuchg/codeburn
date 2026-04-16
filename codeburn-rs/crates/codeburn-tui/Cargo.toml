@@ -1,0 +1,11 @@
+[package]
+name = "codeburn-tui"
+description = "Interactive TUI dashboard for codeburn"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+codeburn-core = { path = "../codeburn-core" }
+crossterm = { workspace = true }
+ratatui = { workspace = true }

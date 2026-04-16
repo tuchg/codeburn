@@ -1,14 +1,11 @@
 pub mod bash_utils;
 pub mod classifier;
 pub mod config;
-pub mod display;
-pub mod export;
 pub mod models;
 pub mod parser;
 pub mod providers;
 pub mod stats;
 pub mod timing;
-pub mod tui;
 pub mod types;
 
 /// Unified error type for codeburn operations.

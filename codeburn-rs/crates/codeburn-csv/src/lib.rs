@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use crate::classifier::category_label;
-use crate::types::*;
+use codeburn_core::classifier::category_label;
+use codeburn_core::types::*;
 
 fn esc_csv(s: &str) -> String {
     let sanitized = if s.starts_with('=')

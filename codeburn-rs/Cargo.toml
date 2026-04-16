@@ -1,24 +1,21 @@
-[package]
-name = "codeburn"
+[workspace]
+members = [
+    "crates/codeburn-core",
+    "crates/codeburn-tui",
+    "crates/codeburn-csv",
+    "crates/codeburn-cli",
+]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "See where your AI coding tokens go -- with timing, file changes, and code diff stats"
 license = "MIT"
 
-[[bin]]
-name = "codeburn"
-path = "src/main.rs"
-
-[lib]
-name = "codeburn"
-path = "src/lib.rs"
-
-[dependencies]
+[workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-clap = { version = "4.5", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
-colored = "3.0"
 dirs = "6.0"
 glob = "0.3"
 regex = "1.10"
@@ -26,14 +23,12 @@ rayon = "1.12"
 thiserror = "2.0"
 anyhow = "1.0"
 dashmap = "6.1"
+toml = "1.1.2"
+clap = { version = "4.5", features = ["derive"] }
+colored = "3.0"
 crossterm = "0.29"
 ratatui = { version = "0.30", features = ["crossterm"] }
-rusqlite = { version = "0.32", features = ["bundled"], optional = true }
-toml = "1.1.2"
-
-[features]
-default = []
-sqlite = ["dep:rusqlite"]
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [profile.release]
 opt-level = 3
