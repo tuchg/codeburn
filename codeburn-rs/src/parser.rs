@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use chrono::DateTime;
+use dashmap::DashMap;
 use rayon::prelude::*;
 
 use crate::bash_utils::{extract_bash_commands, is_bash_tool};
@@ -605,7 +605,7 @@ pub fn discover_and_parse(
     provider_filter: Option<&ProviderKind>,
 ) -> Vec<ProjectSummary> {
     let claude_dir = get_claude_dir();
-    let all_projects: Mutex<HashMap<String, ProjectSummary>> = Mutex::new(HashMap::new());
+    let all_projects: DashMap<String, ProjectSummary> = DashMap::new();
 
     let include_claude = provider_filter.is_none()
         || provider_filter == Some(&ProviderKind::Claude);
@@ -613,7 +613,7 @@ pub fn discover_and_parse(
     // Claude is parsed specially (full turn grouping, file change tracking)
     if include_claude {
         for p in discover_claude_sessions(&claude_dir, date_range) {
-            merge_project(&mut all_projects.lock().unwrap(), p);
+            merge_into_dashmap(&all_projects, p);
         }
     }
 
@@ -626,48 +626,32 @@ pub fn discover_and_parse(
             _ => Vec::new(),
         };
 
-    // Parse each non-Claude provider in parallel
+    // Parse each non-Claude provider in parallel; DashMap provides lock-free concurrent writes.
     providers.par_iter().for_each(|provider| {
-        let summaries = parse_provider_sessions(provider.as_ref(), date_range);
-        let mut map = all_projects.lock().unwrap();
-        for p in summaries {
-            merge_project(&mut map, p);
+        for p in parse_provider_sessions(provider.as_ref(), date_range) {
+            merge_into_dashmap(&all_projects, p);
         }
     });
 
-    let mut projects: Vec<ProjectSummary> = all_projects
-        .into_inner()
-        .unwrap()
-        .into_values()
-        .collect();
+    let mut projects: Vec<ProjectSummary> =
+        all_projects.into_iter().map(|(_, v)| v).collect();
     projects.sort_by(|a, b| b.total_cost_usd.partial_cmp(&a.total_cost_usd).unwrap());
     projects
 }
 
-fn merge_project(
-    all_projects: &mut HashMap<String, ProjectSummary>,
-    p: ProjectSummary,
-) {
-    let existing = all_projects.entry(p.project.clone()).or_insert_with(|| {
-        ProjectSummary {
-            project: p.project.clone(),
-            project_path: p.project_path.clone(),
-            sessions: vec![],
-            total_cost_usd: 0.0,
-            total_api_calls: 0,
-            total_files_changed: 0,
-            total_lines_added: 0,
-            total_lines_removed: 0,
-            total_duration_seconds: 0.0,
-        }
-    });
-    existing.sessions.extend(p.sessions);
-    existing.total_cost_usd += p.total_cost_usd;
-    existing.total_api_calls += p.total_api_calls;
-    existing.total_files_changed += p.total_files_changed;
-    existing.total_lines_added += p.total_lines_added;
-    existing.total_lines_removed += p.total_lines_removed;
-    existing.total_duration_seconds += p.total_duration_seconds;
+/// Merge a parsed project into the shared DashMap without any external lock.
+fn merge_into_dashmap(map: &DashMap<String, ProjectSummary>, p: ProjectSummary) {
+    map.entry(p.project.clone())
+        .and_modify(|existing| {
+            existing.sessions.extend(p.sessions.clone());
+            existing.total_cost_usd += p.total_cost_usd;
+            existing.total_api_calls += p.total_api_calls;
+            existing.total_files_changed += p.total_files_changed;
+            existing.total_lines_added += p.total_lines_added;
+            existing.total_lines_removed += p.total_lines_removed;
+            existing.total_duration_seconds += p.total_duration_seconds;
+        })
+        .or_insert(p);
 }
 
 /// Parse sessions from any provider using the Provider trait

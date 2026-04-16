@@ -25,6 +25,9 @@ regex = "1.10"
 rayon = "1.12"
 thiserror = "2.0"
 anyhow = "1.0"
+dashmap = "6.1"
+crossterm = "0.29"
+ratatui = { version = "0.30", features = ["crossterm"] }
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 
 [features]

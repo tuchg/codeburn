@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{Datelike, Local, NaiveDate};
 use clap::ValueEnum;
 use serde::Deserialize;
 
@@ -17,6 +17,94 @@ pub enum Period {
     Month,
     /// All time
     All,
+}
+
+impl Period {
+    /// Compute the concrete date range and a human-readable label for this period.
+    pub fn date_range(&self) -> (DateRange, String) {
+        let today = Local::now().date_naive();
+        let end = today.succ_opt().unwrap_or(today);
+        match self {
+            Period::Today => (
+                DateRange { start: today, end },
+                format!("Today ({})", today),
+            ),
+            Period::Week => (
+                DateRange { start: today - chrono::Days::new(7), end },
+                "Last 7 Days".to_string(),
+            ),
+            Period::Month => {
+                let start =
+                    NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today);
+                (
+                    DateRange { start, end },
+                    format!("{} {}", Self::month_name(today.month()), today.year()),
+                )
+            }
+            Period::Days30 => (
+                DateRange { start: today - chrono::Days::new(30), end },
+                "Last 30 Days".to_string(),
+            ),
+            Period::All => (
+                DateRange {
+                    start: NaiveDate::from_ymd_opt(2020, 1, 1).unwrap_or(today),
+                    end,
+                },
+                "All Time".to_string(),
+            ),
+        }
+    }
+
+    /// Short tab label shown in the TUI.
+    pub fn label(self) -> &'static str {
+        match self {
+            Period::Today => "Today",
+            Period::Week => "7 Days",
+            Period::Days30 => "30 Days",
+            Period::Month => "This Month",
+            Period::All => "All Time",
+        }
+    }
+
+    /// Cycle to the previous period (wraps around, skips All).
+    pub fn prev(self) -> Self {
+        match self {
+            Period::Today => Period::Month,
+            Period::Week => Period::Today,
+            Period::Days30 => Period::Week,
+            Period::Month => Period::Days30,
+            Period::All => Period::Month,
+        }
+    }
+
+    /// Cycle to the next period (wraps around, skips All).
+    pub fn next(self) -> Self {
+        match self {
+            Period::Today => Period::Week,
+            Period::Week => Period::Days30,
+            Period::Days30 => Period::Month,
+            Period::Month => Period::Today,
+            Period::All => Period::Today,
+        }
+    }
+
+    fn month_name(m: u32) -> &'static str {
+        match m {
+            1 => "January",
+            2 => "February",
+            3 => "March",
+            4 => "April",
+            5 => "May",
+            6 => "June",
+            7 => "July",
+            8 => "August",
+            9 => "September",
+            10 => "October",
+            11 => "November",
+            12 => "December",
+            _ => "Unknown",
+        }
+    }
 }
 
 /// Known AI coding providers. "Unknown" carries the raw string for pass-through.

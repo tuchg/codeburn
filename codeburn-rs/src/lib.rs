@@ -7,6 +7,7 @@ pub mod parser;
 pub mod providers;
 pub mod stats;
 pub mod timing;
+pub mod tui;
 pub mod types;
 
 /// Unified error type for codeburn operations.
