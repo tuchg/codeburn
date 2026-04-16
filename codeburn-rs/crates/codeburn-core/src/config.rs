@@ -31,7 +31,10 @@ pub struct Config {
 }
 
 impl Config {
-    /// Default config file path: `~/.config/codeburn/config.toml`
+    /// Default config file path (platform-dependent via `dirs::config_dir()`):
+    /// - Linux: `~/.config/codeburn/config.toml`
+    /// - macOS: `~/Library/Application Support/codeburn/config.toml`
+    /// - Windows: `{FOLDERID_RoamingAppData}\codeburn\config.toml`
     pub fn default_path() -> Option<PathBuf> {
         dirs::config_dir().map(|d| d.join("codeburn").join("config.toml"))
     }
