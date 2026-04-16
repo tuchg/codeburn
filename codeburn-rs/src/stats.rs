@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
+use crate::models;
 use crate::types::*;
 
 pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
     let mut total_cost = 0.0;
     let mut total_calls: u64 = 0;
+    let mut total_sessions: u64 = 0;
     let mut total_tokens = TokenUsage::default();
     let mut total_duration = 0.0;
     let mut total_files: u64 = 0;
@@ -13,6 +15,8 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
     let mut model_map: HashMap<String, ModelStats> = HashMap::new();
     let mut category_map: HashMap<String, CategoryStats> = HashMap::new();
     let mut tool_map: HashMap<String, u64> = HashMap::new();
+    let mut mcp_map: HashMap<String, u64> = HashMap::new();
+    let mut bash_map: HashMap<String, u64> = HashMap::new();
 
     for project in projects {
         total_cost += project.total_cost_usd;
@@ -21,6 +25,7 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
         total_added += project.total_lines_added;
         total_removed += project.total_lines_removed;
         total_duration += project.total_duration_seconds;
+        total_sessions += project.sessions.len() as u64;
 
         for session in &project.sessions {
             total_tokens += session.tokens.clone();
@@ -30,22 +35,29 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
                 entry.turns += stats.turns;
                 entry.cost_usd += stats.cost_usd;
                 entry.duration_seconds += stats.duration_seconds;
+                entry.retries += stats.retries;
+                entry.edit_turns += stats.edit_turns;
+                entry.one_shot_turns += stats.one_shot_turns;
             }
 
-            for turn in &session.turns {
-                for call in &turn.calls {
-                    let model_key = short_model_name(&call.model);
-                    let entry = model_map.entry(model_key).or_default();
-                    entry.calls += 1;
-                    entry.cost_usd += call.cost_usd;
-                    entry.tokens += call.usage.clone();
+            // Aggregate model/tool/mcp/bash from session breakdowns
+            for (model, stats) in &session.model_breakdown {
+                let entry = model_map.entry(model.clone()).or_default();
+                entry.calls += stats.calls;
+                entry.cost_usd += stats.cost_usd;
+                entry.tokens += stats.tokens.clone();
+            }
 
-                    for tool in &call.tools {
-                        if !tool.starts_with("mcp__") {
-                            *tool_map.entry(tool.clone()).or_insert(0) += 1;
-                        }
-                    }
-                }
+            for (tool, count) in &session.tool_breakdown {
+                *tool_map.entry(tool.clone()).or_insert(0) += count;
+            }
+
+            for (server, count) in &session.mcp_breakdown {
+                *mcp_map.entry(server.clone()).or_insert(0) += count;
+            }
+
+            for (cmd, count) in &session.bash_breakdown {
+                *bash_map.entry(cmd.clone()).or_insert(0) += count;
             }
         }
     }
@@ -59,43 +71,41 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
     let mut tool_breakdown: Vec<(String, u64)> = tool_map.into_iter().collect();
     tool_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
 
+    let mut mcp_breakdown: Vec<(String, u64)> = mcp_map.into_iter().collect();
+    mcp_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let mut bash_breakdown: Vec<(String, u64)> = bash_map.into_iter().collect();
+    bash_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let total_input_plus_cache =
+        total_tokens.input_tokens + total_tokens.cache_read_tokens;
+    let cache_hit_pct = if total_input_plus_cache > 0 {
+        (total_tokens.cache_read_tokens as f64 / total_input_plus_cache as f64) * 100.0
+    } else {
+        0.0
+    };
+
     Report {
         label: label.to_string(),
         total_cost_usd: total_cost,
         total_api_calls: total_calls,
+        total_sessions,
         total_tokens,
         total_duration_seconds: total_duration,
         total_files_changed: total_files,
         total_lines_added: total_added,
         total_lines_removed: total_removed,
+        cache_hit_pct,
         projects: projects.to_vec(),
         model_breakdown,
         category_breakdown,
         tool_breakdown,
+        mcp_breakdown,
+        bash_breakdown,
     }
 }
 
-fn short_model_name(model: &str) -> String {
-    let canonical = model.split('@').next().unwrap_or(model);
-
-    let names: &[(&str, &str)] = &[
-        ("claude-opus-4-6", "Opus 4.6"),
-        ("claude-opus-4-5", "Opus 4.5"),
-        ("claude-opus-4", "Opus 4"),
-        ("claude-sonnet-4-6", "Sonnet 4.6"),
-        ("claude-sonnet-4-5", "Sonnet 4.5"),
-        ("claude-sonnet-4", "Sonnet 4"),
-        ("claude-3-7-sonnet", "Sonnet 3.7"),
-        ("claude-3-5-sonnet", "Sonnet 3.5"),
-        ("claude-haiku-4-5", "Haiku 4.5"),
-        ("claude-3-5-haiku", "Haiku 3.5"),
-    ];
-
-    for (prefix, name) in names {
-        if canonical.starts_with(prefix) {
-            return name.to_string();
-        }
-    }
-
-    canonical.to_string()
+#[allow(dead_code)]
+pub fn short_model_name(model: &str) -> String {
+    models::short_model_name(model)
 }

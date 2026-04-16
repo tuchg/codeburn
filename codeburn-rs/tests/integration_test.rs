@@ -109,8 +109,8 @@ fn test_category_classification() {
     let report = codeburn::stats::build_report(&projects, "Test");
 
     let categories: Vec<&str> = report.category_breakdown.iter().map(|(c, _)| c.as_str()).collect();
-    assert!(categories.contains(&"Feature Dev"), "Expected Feature Dev category, got {:?}", categories);
-    assert!(categories.contains(&"Testing"), "Expected Testing category, got {:?}", categories);
+    assert!(categories.contains(&"feature"), "Expected feature category, got {:?}", categories);
+    assert!(categories.contains(&"testing"), "Expected testing category, got {:?}", categories);
 }
 
 #[test]
@@ -186,4 +186,362 @@ fn tempdir() -> std::path::PathBuf {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+// ========== Codex provider tests ==========
+
+fn codex_session_meta(cwd: &str, originator: &str, session_id: &str, model: &str) -> String {
+    serde_json::json!({
+        "type": "session_meta",
+        "timestamp": "2026-04-14T10:00:00Z",
+        "payload": {
+            "cwd": cwd,
+            "originator": originator,
+            "session_id": session_id,
+            "model": model,
+        }
+    })
+    .to_string()
+}
+
+fn codex_token_count(
+    timestamp: &str,
+    last_input: u64,
+    last_cached: u64,
+    last_output: u64,
+    last_reasoning: u64,
+    cumulative_total: u64,
+) -> String {
+    serde_json::json!({
+        "type": "event_msg",
+        "timestamp": timestamp,
+        "payload": {
+            "type": "token_count",
+            "info": {
+                "last_token_usage": {
+                    "input_tokens": last_input,
+                    "cached_input_tokens": last_cached,
+                    "output_tokens": last_output,
+                    "reasoning_output_tokens": last_reasoning,
+                    "total_tokens": last_input + last_cached + last_output + last_reasoning,
+                },
+                "total_token_usage": {
+                    "input_tokens": last_input,
+                    "cached_input_tokens": last_cached,
+                    "output_tokens": last_output,
+                    "reasoning_output_tokens": last_reasoning,
+                    "total_tokens": cumulative_total,
+                }
+            }
+        }
+    })
+    .to_string()
+}
+
+fn codex_function_call(name: &str, timestamp: &str) -> String {
+    serde_json::json!({
+        "type": "response_item",
+        "timestamp": timestamp,
+        "payload": {
+            "type": "function_call",
+            "name": name,
+        }
+    })
+    .to_string()
+}
+
+fn codex_user_message(text: &str, timestamp: &str) -> String {
+    serde_json::json!({
+        "type": "response_item",
+        "timestamp": timestamp,
+        "payload": {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_text", "text": text}],
+        }
+    })
+    .to_string()
+}
+
+fn create_codex_session(dir: &Path, date: &str, filename: &str, lines: &[String]) {
+    let parts: Vec<&str> = date.split('-').collect();
+    let session_dir = dir
+        .join("sessions")
+        .join(parts[0])
+        .join(parts[1])
+        .join(parts[2]);
+    fs::create_dir_all(&session_dir).unwrap();
+    fs::write(session_dir.join(filename), lines.join("\n") + "\n").unwrap();
+}
+
+#[test]
+fn test_codex_session_discovery() {
+    let tmp = tempdir();
+    create_codex_session(
+        &tmp,
+        "2026-04-14",
+        "rollout-abc123.jsonl",
+        &[
+            codex_session_meta("/Users/test/myproject", "codex-cli", "sess-001", "gpt-5.3-codex"),
+            codex_token_count("2026-04-14T10:01:00Z", 100, 0, 50, 0, 150),
+        ],
+    );
+
+    unsafe { std::env::set_var("CODEX_HOME", tmp.to_str().unwrap()); }
+    let date_range = codeburn::types::DateRange {
+        start: chrono::NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+        end: chrono::NaiveDate::from_ymd_opt(2026, 4, 15).unwrap(),
+    };
+
+    // Use a non-existent claude dir since we're testing codex only
+    let claude_dir = tmp.join("nonexistent-claude");
+    fs::create_dir_all(claude_dir.join("projects")).unwrap();
+    let projects = codeburn::parser::discover_and_parse(&claude_dir, &date_range);
+
+    assert!(
+        !projects.is_empty(),
+        "Should discover codex sessions, got empty"
+    );
+    assert_eq!(projects[0].project, "Users-test-myproject");
+    unsafe { std::env::remove_var("CODEX_HOME"); }
+}
+
+#[test]
+fn test_codex_tool_name_mapping() {
+    let tmp = tempdir();
+    create_codex_session(
+        &tmp,
+        "2026-04-14",
+        "rollout-tools.jsonl",
+        &[
+            codex_session_meta("/Users/test/proj", "codex-cli", "sess-tools", "gpt-5.3-codex"),
+            codex_user_message("fix the bug", "2026-04-14T10:00:00Z"),
+            codex_function_call("exec_command", "2026-04-14T10:00:30Z"),
+            codex_function_call("read_file", "2026-04-14T10:00:35Z"),
+            codex_token_count("2026-04-14T10:01:00Z", 500, 100, 200, 50, 850),
+        ],
+    );
+
+    unsafe { std::env::set_var("CODEX_HOME", tmp.to_str().unwrap()); }
+    let date_range = codeburn::types::DateRange {
+        start: chrono::NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+        end: chrono::NaiveDate::from_ymd_opt(2026, 4, 15).unwrap(),
+    };
+
+    let claude_dir = tmp.join("nonexistent-claude");
+    fs::create_dir_all(claude_dir.join("projects")).unwrap();
+    let projects = codeburn::parser::discover_and_parse(&claude_dir, &date_range);
+
+    assert!(!projects.is_empty());
+    let session = &projects[0].sessions[0];
+    assert_eq!(session.api_calls, 1);
+    assert!(session.total_cost_usd > 0.0);
+
+    // Check tool name mapping
+    let all_tools: Vec<String> = session
+        .turns
+        .iter()
+        .flat_map(|t| t.calls.iter())
+        .flat_map(|c| c.tools.clone())
+        .collect();
+    assert!(all_tools.contains(&"Bash".to_string()), "exec_command should map to Bash");
+    assert!(all_tools.contains(&"Read".to_string()), "read_file should map to Read");
+
+    unsafe { std::env::remove_var("CODEX_HOME"); }
+}
+
+#[test]
+fn test_codex_dedup_same_cumulative_total() {
+    let tmp = tempdir();
+    create_codex_session(
+        &tmp,
+        "2026-04-14",
+        "rollout-dedup.jsonl",
+        &[
+            codex_session_meta("/Users/test/proj", "codex-cli", "sess-dedup", "gpt-5.3-codex"),
+            codex_token_count("2026-04-14T10:01:00Z", 500, 0, 200, 0, 700),
+            codex_token_count("2026-04-14T10:01:01Z", 500, 0, 200, 0, 700), // duplicate
+            codex_token_count("2026-04-14T10:02:00Z", 300, 0, 100, 0, 1100), // new
+        ],
+    );
+
+    unsafe { std::env::set_var("CODEX_HOME", tmp.to_str().unwrap()); }
+    let date_range = codeburn::types::DateRange {
+        start: chrono::NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+        end: chrono::NaiveDate::from_ymd_opt(2026, 4, 15).unwrap(),
+    };
+
+    let claude_dir = tmp.join("nonexistent-claude");
+    fs::create_dir_all(claude_dir.join("projects")).unwrap();
+    let projects = codeburn::parser::discover_and_parse(&claude_dir, &date_range);
+
+    assert!(!projects.is_empty());
+    // Should only produce 2 calls, not 3 (dedup by cumulative total)
+    assert_eq!(projects[0].total_api_calls, 2);
+
+    unsafe { std::env::remove_var("CODEX_HOME"); }
+}
+
+#[test]
+fn test_codex_skips_non_codex_originator() {
+    let tmp = tempdir();
+    let meta = serde_json::json!({
+        "type": "session_meta",
+        "timestamp": "2026-04-14T10:00:00Z",
+        "payload": {
+            "cwd": "/test",
+            "originator": "not-codex",
+            "session_id": "sess-skip",
+            "model": "gpt-5",
+        }
+    });
+    create_codex_session(
+        &tmp,
+        "2026-04-14",
+        "rollout-skip.jsonl",
+        &[meta.to_string()],
+    );
+
+    unsafe { std::env::set_var("CODEX_HOME", tmp.to_str().unwrap()); }
+    let date_range = codeburn::types::DateRange {
+        start: chrono::NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+        end: chrono::NaiveDate::from_ymd_opt(2026, 4, 15).unwrap(),
+    };
+
+    let claude_dir = tmp.join("nonexistent-claude");
+    fs::create_dir_all(claude_dir.join("projects")).unwrap();
+    let projects = codeburn::parser::discover_and_parse(&claude_dir, &date_range);
+    assert!(projects.is_empty(), "Should skip non-codex session");
+
+    unsafe { std::env::remove_var("CODEX_HOME"); }
+}
+
+// ========== Bash breakdown tests ==========
+
+#[test]
+fn test_bash_command_breakdown_in_session() {
+    let tmp = tempdir();
+    let project_dir = tmp.join("projects").join("bash-project");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    let jsonl = r#"{"type":"user","timestamp":"2026-04-16T00:00:00Z","sessionId":"bash-001","message":{"role":"user","content":"Run tests"}}
+{"type":"assistant","timestamp":"2026-04-16T00:00:05Z","sessionId":"bash-001","message":{"id":"msg-b1","type":"message","role":"assistant","model":"claude-sonnet-4-20260414","content":[{"type":"text","text":"Running."},{"type":"tool_use","id":"tu-b1","name":"Bash","input":{"command":"cd /project && cargo test && npm run build"}}],"usage":{"input_tokens":100,"output_tokens":20}}}"#;
+
+    fs::write(project_dir.join("session-bash.jsonl"), jsonl).unwrap();
+
+    let date_range = codeburn::types::DateRange {
+        start: chrono::NaiveDate::from_ymd_opt(2026, 4, 16).unwrap(),
+        end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
+    };
+
+    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    assert_eq!(projects.len(), 1);
+
+    let session = &projects[0].sessions[0];
+    let bash_cmds: std::collections::HashMap<&str, u64> = session
+        .bash_breakdown
+        .iter()
+        .map(|(k, v)| (k.as_str(), *v))
+        .collect();
+
+    assert_eq!(bash_cmds.get("cargo"), Some(&1), "Should have cargo");
+    assert_eq!(bash_cmds.get("npm"), Some(&1), "Should have npm");
+    assert!(bash_cmds.get("cd").is_none(), "Should not have cd");
+}
+
+#[test]
+fn test_mcp_breakdown_in_session() {
+    let tmp = tempdir();
+    let project_dir = tmp.join("projects").join("mcp-project");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    let jsonl = r#"{"type":"user","timestamp":"2026-04-16T00:00:00Z","sessionId":"mcp-001","message":{"role":"user","content":"Search for issues"}}
+{"type":"assistant","timestamp":"2026-04-16T00:00:05Z","sessionId":"mcp-001","message":{"id":"msg-m1","type":"message","role":"assistant","model":"claude-sonnet-4-20260414","content":[{"type":"text","text":"Searching."},{"type":"tool_use","id":"tu-m1","name":"mcp__github__search_issues","input":{"query":"bug"}},{"type":"tool_use","id":"tu-m2","name":"mcp__github__list_repos","input":{}},{"type":"tool_use","id":"tu-m3","name":"mcp__jira__get_ticket","input":{"id":"PROJ-1"}}],"usage":{"input_tokens":100,"output_tokens":20}}}"#;
+
+    fs::write(project_dir.join("session-mcp.jsonl"), jsonl).unwrap();
+
+    let date_range = codeburn::types::DateRange {
+        start: chrono::NaiveDate::from_ymd_opt(2026, 4, 16).unwrap(),
+        end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
+    };
+
+    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    assert_eq!(projects.len(), 1);
+
+    let session = &projects[0].sessions[0];
+    let mcp_cmds: std::collections::HashMap<&str, u64> = session
+        .mcp_breakdown
+        .iter()
+        .map(|(k, v)| (k.as_str(), *v))
+        .collect();
+
+    assert_eq!(mcp_cmds.get("github"), Some(&2), "Should have 2 github MCP calls");
+    assert_eq!(mcp_cmds.get("jira"), Some(&1), "Should have 1 jira MCP call");
+}
+
+#[test]
+fn test_retry_and_oneshot_tracking() {
+    let tmp = tempdir();
+    let project_dir = tmp.join("projects").join("retry-project");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    // Session with edit -> bash (test) -> edit (retry pattern)
+    let jsonl = r#"{"type":"user","timestamp":"2026-04-16T00:00:00Z","sessionId":"retry-001","message":{"role":"user","content":"Add a feature"}}
+{"type":"assistant","timestamp":"2026-04-16T00:00:05Z","sessionId":"retry-001","message":{"id":"msg-r1","type":"message","role":"assistant","model":"claude-sonnet-4-20260414","content":[{"type":"tool_use","id":"tu-r1","name":"Edit","input":{"file_path":"a.ts","old_string":"old","new_string":"new"}}],"usage":{"input_tokens":100,"output_tokens":20}}}
+{"type":"assistant","timestamp":"2026-04-16T00:00:10Z","sessionId":"retry-001","message":{"id":"msg-r2","type":"message","role":"assistant","model":"claude-sonnet-4-20260414","content":[{"type":"tool_use","id":"tu-r2","name":"Bash","input":{"command":"npm test"}}],"usage":{"input_tokens":100,"output_tokens":20}}}
+{"type":"assistant","timestamp":"2026-04-16T00:00:15Z","sessionId":"retry-001","message":{"id":"msg-r3","type":"message","role":"assistant","model":"claude-sonnet-4-20260414","content":[{"type":"tool_use","id":"tu-r3","name":"Edit","input":{"file_path":"a.ts","old_string":"new","new_string":"fixed"}}],"usage":{"input_tokens":100,"output_tokens":20}}}"#;
+
+    fs::write(project_dir.join("session-retry.jsonl"), jsonl).unwrap();
+
+    let date_range = codeburn::types::DateRange {
+        start: chrono::NaiveDate::from_ymd_opt(2026, 4, 16).unwrap(),
+        end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
+    };
+
+    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    assert_eq!(projects.len(), 1);
+
+    let session = &projects[0].sessions[0];
+    let turn = &session.turns[0];
+    assert_eq!(turn.retries, 1, "Should detect 1 retry cycle");
+    assert!(turn.has_edits, "Should detect edits");
+}
+
+#[test]
+fn test_report_bash_and_mcp_aggregation() {
+    let tmp = tempdir();
+    let project_dir = tmp.join("projects").join("agg-project");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    let jsonl = r#"{"type":"user","timestamp":"2026-04-16T00:00:00Z","sessionId":"agg-001","message":{"role":"user","content":"Do stuff"}}
+{"type":"assistant","timestamp":"2026-04-16T00:00:05Z","sessionId":"agg-001","message":{"id":"msg-a1","type":"message","role":"assistant","model":"claude-sonnet-4-20260414","content":[{"type":"tool_use","id":"tu-a1","name":"Bash","input":{"command":"cargo build && cargo test"}},{"type":"tool_use","id":"tu-a2","name":"mcp__github__get_issue","input":{}}],"usage":{"input_tokens":100,"output_tokens":20}}}"#;
+
+    fs::write(project_dir.join("session-agg.jsonl"), jsonl).unwrap();
+
+    let date_range = codeburn::types::DateRange {
+        start: chrono::NaiveDate::from_ymd_opt(2026, 4, 16).unwrap(),
+        end: chrono::NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(),
+    };
+
+    let projects = codeburn::parser::discover_and_parse(&tmp, &date_range);
+    let report = codeburn::stats::build_report(&projects, "Test");
+
+    // Bash breakdown in report
+    let bash: std::collections::HashMap<&str, u64> = report
+        .bash_breakdown
+        .iter()
+        .map(|(k, v)| (k.as_str(), *v))
+        .collect();
+    assert_eq!(bash.get("cargo"), Some(&2), "Report should aggregate bash commands (cargo x2)");
+
+    // MCP breakdown in report
+    let mcp: std::collections::HashMap<&str, u64> = report
+        .mcp_breakdown
+        .iter()
+        .map(|(k, v)| (k.as_str(), *v))
+        .collect();
+    assert_eq!(mcp.get("github"), Some(&1), "Report should aggregate MCP calls");
+
+    // Sessions count
+    assert_eq!(report.total_sessions, 1);
 }

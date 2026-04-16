@@ -1,4 +1,8 @@
+mod bash_utils;
+mod classifier;
 mod display;
+mod export;
+mod models;
 mod parser;
 mod stats;
 mod timing;
@@ -34,6 +38,12 @@ enum Commands {
     Today,
     /// Show this month's usage
     Month,
+    /// Export usage data to CSV
+    Export {
+        /// Output file path
+        #[arg(short, long, default_value = "codeburn-report.csv")]
+        output: String,
+    },
 }
 
 fn get_date_range(period: &str) -> (DateRange, String) {
@@ -90,20 +100,56 @@ fn month_name(m: u32) -> &'static str {
 fn main() {
     let cli = Cli::parse();
 
-    let (period, label) = match &cli.command {
-        Some(Commands::Report { period }) => (period.as_str(), None),
-        Some(Commands::Today) => ("today", None),
-        Some(Commands::Month) => ("month", None),
-        None => ("week", None),
-    };
+    match &cli.command {
+        Some(Commands::Export { output }) => {
+            let claude_dir = get_claude_dir();
 
-    let (date_range, period_label) = get_date_range(period);
-    let label = label.unwrap_or(period_label);
+            let periods_config: Vec<(&str, &str)> = vec![
+                ("today", "Today"),
+                ("week", "7 Days"),
+                ("30days", "30 Days"),
+                ("month", "This Month"),
+            ];
 
-    let claude_dir = get_claude_dir();
-    let projects = discover_and_parse(&claude_dir, &date_range);
-    let report = stats::build_report(&projects, &label);
-    display::print_report(&report);
+            let mut period_data: Vec<(String, Vec<types::ProjectSummary>)> = Vec::new();
+            for (period, label) in &periods_config {
+                let (date_range, _) = get_date_range(period);
+                let projects = discover_and_parse(&claude_dir, &date_range);
+                period_data.push((label.to_string(), projects));
+            }
+
+            let exports: Vec<export::PeriodExport> = period_data
+                .iter()
+                .map(|(label, projects)| export::PeriodExport {
+                    label: label.clone(),
+                    projects,
+                })
+                .collect();
+
+            let output_path = std::path::Path::new(output);
+            match export::export_csv(&exports, output_path) {
+                Ok(path) => println!("Exported to {}", path),
+                Err(e) => eprintln!("Export failed: {}", e),
+            }
+        }
+        _ => {
+            let (period, _label) = match &cli.command {
+                Some(Commands::Report { period }) => (period.as_str(), None),
+                Some(Commands::Today) => ("today", None),
+                Some(Commands::Month) => ("month", None),
+                None => ("week", None),
+                Some(Commands::Export { .. }) => unreachable!(),
+            };
+
+            let (date_range, period_label) = get_date_range(period);
+            let label = _label.unwrap_or(period_label);
+
+            let claude_dir = get_claude_dir();
+            let projects = discover_and_parse(&claude_dir, &date_range);
+            let report = stats::build_report(&projects, &label);
+            display::print_report(&report);
+        }
+    }
 }
 
 fn get_claude_dir() -> PathBuf {

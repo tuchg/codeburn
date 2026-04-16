@@ -1,5 +1,6 @@
 use colored::Colorize;
 
+use crate::classifier::category_label;
 use crate::timing::format_duration;
 use crate::types::Report;
 
@@ -8,8 +9,10 @@ fn format_cost(cost: f64) -> String {
         format!("${:.0}", cost)
     } else if cost >= 1.0 {
         format!("${:.2}", cost)
-    } else {
+    } else if cost >= 0.01 {
         format!("${:.3}", cost)
+    } else {
+        format!("${:.4}", cost)
     }
 }
 
@@ -43,10 +46,11 @@ pub fn print_report(report: &Report) {
 
     println!("{}", "  OVERVIEW".bold().yellow());
     println!(
-        "  Cost: {}  API calls: {}  Duration: {}",
+        "  Cost: {}  API calls: {}  Sessions: {}  Cache hit: {}",
         format_cost(report.total_cost_usd).bright_yellow().bold(),
         format!("{}", report.total_api_calls).white().bold(),
-        format_duration(report.total_duration_seconds).cyan().bold(),
+        format!("{}", report.total_sessions).white().bold(),
+        format!("{:.0}%", report.cache_hit_pct).cyan().bold(),
     );
     println!(
         "  Tokens: {} in / {} out / {} cache-read / {} cache-write",
@@ -55,6 +59,12 @@ pub fn print_report(report: &Report) {
         format_tokens(report.total_tokens.cache_read_tokens).dimmed(),
         format_tokens(report.total_tokens.cache_creation_tokens).dimmed(),
     );
+    if report.total_duration_seconds > 0.0 {
+        println!(
+            "  Duration: {}",
+            format_duration(report.total_duration_seconds).cyan().bold(),
+        );
+    }
     println!();
 
     println!("{}", "  CODE CHANGES".bold().green());
@@ -83,11 +93,12 @@ pub fn print_report(report: &Report) {
                 &p.project_path
             };
             println!(
-                "  {:>8}  [{}]  {}  ({} calls, {} files, +{}/-{}, {})",
+                "  {:>8}  [{}]  {}  ({} calls, {} sess, {} files, +{}/-{}, {})",
                 cost_str.bright_yellow(),
                 bar_str,
                 name.white(),
                 p.total_api_calls,
+                p.sessions.len(),
                 p.total_files_changed,
                 p.total_lines_added,
                 p.total_lines_removed,
@@ -135,16 +146,31 @@ pub fn print_report(report: &Report) {
             } else {
                 String::new()
             };
+
+            let one_shot_str = if stats.edit_turns > 0 {
+                let pct = (stats.one_shot_turns as f64 / stats.edit_turns as f64 * 100.0) as u64;
+                format!("{}% 1-shot", pct)
+            } else {
+                String::new()
+            };
+
+            let display_name = category_label(name);
+
             println!(
-                "  {:>8}  [{}]  {:14}  ({} turns{})",
+                "  {:>8}  [{}]  {:14}  ({} turns{}{})",
                 cost_str.bright_yellow(),
                 bar_str,
-                name.white(),
+                display_name.white(),
                 stats.turns,
                 if duration_str.is_empty() {
                     String::new()
                 } else {
                     format!(", {}", duration_str)
+                },
+                if one_shot_str.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {}", one_shot_str)
                 },
             );
         }
@@ -161,6 +187,48 @@ pub fn print_report(report: &Report) {
             .unwrap_or(1);
 
         for (name, calls) in report.tool_breakdown.iter().take(10) {
+            let bar_str = bar(*calls as f64, max_calls as f64, 20);
+            println!(
+                "  {:>8}  [{}]  {}",
+                format!("{}", calls).white().bold(),
+                bar_str,
+                name.white(),
+            );
+        }
+        println!();
+    }
+
+    if !report.bash_breakdown.is_empty() {
+        println!("{}", "  SHELL COMMANDS".bold().yellow());
+        let max_calls = report
+            .bash_breakdown
+            .iter()
+            .map(|(_, c)| *c)
+            .max()
+            .unwrap_or(1);
+
+        for (name, calls) in report.bash_breakdown.iter().take(10) {
+            let bar_str = bar(*calls as f64, max_calls as f64, 20);
+            println!(
+                "  {:>8}  [{}]  {}",
+                format!("{}", calls).white().bold(),
+                bar_str,
+                name.white(),
+            );
+        }
+        println!();
+    }
+
+    if !report.mcp_breakdown.is_empty() {
+        println!("{}", "  MCP SERVERS".bold().magenta());
+        let max_calls = report
+            .mcp_breakdown
+            .iter()
+            .map(|(_, c)| *c)
+            .max()
+            .unwrap_or(1);
+
+        for (name, calls) in report.mcp_breakdown.iter().take(10) {
             let bar_str = bar(*calls as f64, max_calls as f64, 20);
             println!(
                 "  {:>8}  [{}]  {}",

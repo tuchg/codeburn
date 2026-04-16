@@ -1,4 +1,8 @@
+pub mod bash_utils;
+pub mod classifier;
 pub mod display;
+pub mod export;
+pub mod models;
 pub mod parser;
 pub mod stats;
 pub mod timing;
