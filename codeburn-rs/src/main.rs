@@ -6,7 +6,7 @@ mod types;
 
 use std::path::PathBuf;
 
-use chrono::{Local, NaiveDate};
+use chrono::{Datelike, Local, NaiveDate};
 use clap::{Parser, Subcommand};
 
 use crate::parser::discover_and_parse;
@@ -86,8 +86,6 @@ fn month_name(m: u32) -> &'static str {
         _ => "Unknown",
     }
 }
-
-use chrono::Datelike;
 
 fn main() {
     let cli = Cli::parse();
