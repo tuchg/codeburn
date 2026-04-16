@@ -87,8 +87,14 @@ pub fn print_report(report: &Report) {
         for p in report.projects.iter().take(10) {
             let cost_str = format_cost(p.total_cost_usd);
             let bar_str = bar(p.total_cost_usd, max_cost, 20);
-            let name = if p.project_path.len() > 30 {
-                &p.project_path[p.project_path.len() - 30..]
+            let name = if p.project_path.chars().count() > 30 {
+                let byte_offset = p.project_path
+                    .char_indices()
+                    .rev()
+                    .nth(29)
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                &p.project_path[byte_offset..]
             } else {
                 &p.project_path
             };

@@ -10,6 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::bash_utils::{extract_bash_commands, is_bash_tool};
 use crate::classifier;
+use crate::config::{Config, PricingOverride};
 use crate::models;
 use crate::timing;
 use crate::types::*;
@@ -171,7 +172,7 @@ fn extract_code_changes(content: &[serde_json::Value]) -> (u64, u64) {
     (added, removed)
 }
 
-fn parse_api_call(entry: &JournalEntry) -> Option<ParsedApiCall> {
+fn parse_api_call(entry: &JournalEntry, overrides: &[PricingOverride]) -> Option<ParsedApiCall> {
     if entry.entry_type != "assistant" {
         return None;
     }
@@ -211,14 +212,17 @@ fn parse_api_call(entry: &JournalEntry) -> Option<ParsedApiCall> {
     let file_paths = extract_file_paths(&content);
     let (lines_added, lines_removed) = extract_code_changes(&content);
 
-    let cost_usd = models::calculate_cost(
-        model,
-        tokens.input_tokens,
-        tokens.output_tokens,
-        tokens.cache_creation_tokens,
-        tokens.cache_read_tokens,
-        web_search_requests,
-        speed,
+    let cost_usd = models::calculate_cost_with_overrides(
+        &models::CostInput {
+            model,
+            input_tokens: tokens.input_tokens,
+            output_tokens: tokens.output_tokens,
+            cache_creation_tokens: tokens.cache_creation_tokens,
+            cache_read_tokens: tokens.cache_read_tokens,
+            web_search_requests,
+            speed,
+        },
+        overrides,
     );
 
     let dedup_key = msg
@@ -286,7 +290,7 @@ fn get_message_id(entry: &JournalEntry) -> Option<String> {
         .map(String::from)
 }
 
-fn group_into_turns(entries: &[JournalEntry], seen_ids: &mut HashSet<String>) -> Vec<ParsedTurn> {
+fn group_into_turns(entries: &[JournalEntry], seen_ids: &mut HashSet<String>, overrides: &[PricingOverride]) -> Vec<ParsedTurn> {
     let mut turns = Vec::new();
     let mut current_user_msg = String::new();
     let mut current_calls: Vec<ParsedApiCall> = Vec::new();
@@ -325,7 +329,7 @@ fn group_into_turns(entries: &[JournalEntry], seen_ids: &mut HashSet<String>) ->
                 }
                 seen_ids.insert(msg_id);
             }
-            if let Some(call) = parse_api_call(entry) {
+            if let Some(call) = parse_api_call(entry, overrides) {
                 current_calls.push(call);
             }
         }
@@ -470,6 +474,7 @@ fn parse_session_file(
     project: &str,
     seen_ids: &mut HashSet<String>,
     date_range: &DateRange,
+    overrides: &[PricingOverride],
 ) -> Option<SessionSummary> {
     let content = match fs::read_to_string(file_path) {
         Ok(c) => c,
@@ -514,7 +519,7 @@ fn parse_session_file(
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let turns = group_into_turns(&filtered, seen_ids);
+    let turns = group_into_turns(&filtered, seen_ids, overrides);
     let summary = build_session_summary(&session_id, project, turns);
 
     if summary.api_calls > 0 {
@@ -558,7 +563,7 @@ fn unsanitize_path(dir_name: &str) -> String {
 }
 
 /// Discover and parse Claude Code sessions
-fn discover_claude_sessions(claude_dir: &Path, date_range: &DateRange) -> Vec<ProjectSummary> {
+fn discover_claude_sessions(claude_dir: &Path, date_range: &DateRange, overrides: &[PricingOverride]) -> Vec<ProjectSummary> {
     let projects_dir = claude_dir.join("projects");
     debug!(dir = %projects_dir.display(), "scanning claude projects directory");
     let mut seen_ids = HashSet::new();
@@ -582,7 +587,7 @@ fn discover_claude_sessions(claude_dir: &Path, date_range: &DateRange) -> Vec<Pr
         let jsonl_files = collect_jsonl_files(&dir_path);
         for file_path in jsonl_files {
             if let Some(session) =
-                parse_session_file(&file_path, &dir_name, &mut seen_ids, date_range)
+                parse_session_file(&file_path, &dir_name, &mut seen_ids, date_range, overrides)
             {
                 project_map
                     .entry(dir_name.clone())
@@ -650,11 +655,16 @@ pub fn discover_and_parse(
     let claude_dir = get_claude_dir();
     let all_projects: DashMap<String, ProjectSummary> = DashMap::new();
 
+    let overrides = Config::load()
+        .map(|c| c.pricing)
+        .unwrap_or_default();
+    let overrides = overrides.as_slice();
+
     let include_claude = provider_filter.is_none()
         || provider_filter == Some(&ProviderKind::Claude);
 
     if include_claude {
-        let claude_projects = discover_claude_sessions(&claude_dir, date_range);
+        let claude_projects = discover_claude_sessions(&claude_dir, date_range, overrides);
         debug!(count = claude_projects.len(), "discovered claude projects");
         for p in claude_projects {
             merge_into_dashmap(&all_projects, p);
@@ -676,7 +686,7 @@ pub fn discover_and_parse(
     );
 
     providers.par_iter().for_each(|provider| {
-        let provider_projects = parse_provider_sessions(provider.as_ref(), date_range);
+        let provider_projects = parse_provider_sessions(provider.as_ref(), date_range, overrides);
         debug!(
             provider = provider.name(),
             projects = provider_projects.len(),
@@ -721,6 +731,7 @@ fn merge_into_dashmap(map: &DashMap<String, ProjectSummary>, p: ProjectSummary) 
 fn parse_provider_sessions(
     provider: &dyn crate::providers::types::Provider,
     date_range: &DateRange,
+    overrides: &[PricingOverride],
 ) -> Vec<ProjectSummary> {
     let sources = provider.discover_sessions();
     debug!(
@@ -761,6 +772,25 @@ fn parse_provider_sessions(
                 .iter()
                 .map(|t| provider.tool_display_name(t))
                 .collect();
+            // Re-apply pricing overrides using the raw model name (before display mapping).
+            // Providers always use "standard" speed; Claude handles its own speed inside
+            // parse_api_call via a separate code path.
+            let cost_usd = if overrides.is_empty() {
+                call.cost_usd
+            } else {
+                models::calculate_cost_with_overrides(
+                    &models::CostInput {
+                        model: &call.model,
+                        input_tokens: call.input_tokens,
+                        output_tokens: call.output_tokens,
+                        cache_creation_tokens: call.cache_creation_input_tokens,
+                        cache_read_tokens: call.cache_read_input_tokens,
+                        web_search_requests: call.web_search_requests,
+                        speed: "standard",
+                    },
+                    overrides,
+                )
+            };
             let api_call = ParsedApiCall {
                 provider: provider.name().to_string(),
                 model: model_display,
@@ -773,7 +803,7 @@ fn parse_provider_sessions(
                     reasoning_tokens: call.reasoning_tokens,
                     web_search_requests: call.web_search_requests,
                 },
-                cost_usd: call.cost_usd,
+                cost_usd,
                 tools: mapped_tools,
                 mcp_tools: extract_mcp_tools(&call.tools),
                 bash_commands: call.bash_commands.clone(),
