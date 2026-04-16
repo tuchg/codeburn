@@ -70,7 +70,9 @@ pub fn extract_bash_commands(command: &str) -> Vec<String> {
     commands
 }
 
-/// Set of tool names that represent bash execution
+/// Tool names that represent bash/shell execution.
+/// Both capitalized (Claude/Cursor) and lowercase (Pi) variants are included
+/// since different providers use different casing conventions.
 pub const BASH_TOOL_NAMES: &[&str] = &["Bash", "bash", "BashTool", "PowerShellTool"];
 
 pub fn is_bash_tool(name: &str) -> bool {

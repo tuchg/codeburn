@@ -2,11 +2,11 @@ use regex::Regex;
 
 use crate::bash_utils::is_bash_tool;
 
+// Both capitalized (Claude/Cursor) and lowercase (Pi) variants are included
+// since different providers use different tool name casing conventions.
 const EDIT_TOOLS: &[&str] = &[
-    "Edit",
-    "edit",
-    "Write",
-    "write",
+    "Edit", "edit",       // Claude/Pi
+    "Write", "write",     // Claude/Pi
     "FileEditTool",
     "FileWriteTool",
     "NotebookEdit",
@@ -14,12 +14,9 @@ const EDIT_TOOLS: &[&str] = &[
 ];
 
 const READ_TOOLS: &[&str] = &[
-    "Read",
-    "read",
-    "Grep",
-    "grep",
-    "Glob",
-    "glob",
+    "Read", "read",       // Claude/Pi
+    "Grep", "grep",       // Claude/Pi
+    "Glob", "glob",       // Claude/Pi
     "FileReadTool",
     "GrepTool",
     "GlobTool",
