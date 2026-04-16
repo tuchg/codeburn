@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+#[cfg(not(feature = "sqlite"))]
 use tracing::debug;
 
 #[cfg(feature = "sqlite")]
@@ -101,7 +102,7 @@ impl Provider for OpenCodeProvider {
     fn discover_sessions(&self) -> Vec<SessionSource> {
         #[cfg(feature = "sqlite")]
         {
-            return discover_opencode_sessions(&self.data_dir);
+            discover_opencode_sessions(&self.data_dir)
         }
         #[cfg(not(feature = "sqlite"))]
         {
@@ -117,7 +118,7 @@ impl Provider for OpenCodeProvider {
     ) -> Vec<ParsedProviderCall> {
         #[cfg(feature = "sqlite")]
         {
-            return parse_opencode_session(source, seen_keys);
+            parse_opencode_session(source, seen_keys)
         }
         #[cfg(not(feature = "sqlite"))]
         {

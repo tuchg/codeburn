@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use tracing::debug;
 
+#[cfg(feature = "sqlite")]
+use crate::models;
 use crate::providers::types::{ParsedProviderCall, Provider, SessionSource};
 
 const MODEL_DISPLAY_NAMES: &[(&str, &str)] = &[
@@ -114,11 +116,11 @@ impl Provider for CursorProvider {
                 debug!(path = %db_path.display(), "cursor database not found");
                 return Vec::new();
             }
-            return vec![SessionSource {
+            vec![SessionSource {
                 path: db_path.to_string_lossy().to_string(),
                 project: "cursor".to_string(),
                 provider: "cursor".to_string(),
-            }];
+            }]
         }
         #[cfg(not(feature = "sqlite"))]
         {
@@ -134,7 +136,7 @@ impl Provider for CursorProvider {
     ) -> Vec<ParsedProviderCall> {
         #[cfg(feature = "sqlite")]
         {
-            return parse_cursor_db(&source.path, seen_keys);
+            parse_cursor_db(&source.path, seen_keys)
         }
         #[cfg(not(feature = "sqlite"))]
         {
@@ -188,30 +190,27 @@ fn parse_cursor_db(db_path: &str, seen_keys: &mut HashSet<String>) -> Vec<Parsed
             AND json_extract(value, '$.type') = 1
             AND json_extract(value, '$.createdAt') > ?
         ORDER BY json_extract(value, '$.createdAt') ASC",
-    ) {
-        if let Ok(rows) = stmt.query_map([&time_floor_str], |row| {
+    )
+        && let Ok(rows) = stmt.query_map([&time_floor_str], |row| {
             Ok((
                 row.get::<_, Option<String>>(0)?,
                 row.get::<_, Option<String>>(2)?,
             ))
         }) {
-            for row in rows.flatten() {
-                if let (Some(conv_id), Some(text)) = row {
-                    if !conv_id.is_empty() && !text.is_empty() {
-                        user_msg_map
-                            .entry(conv_id)
-                            .or_default()
-                            .push(text);
-                    }
-                }
+        for row in rows.flatten() {
+            if let (Some(conv_id), Some(text)) = row
+                && !conv_id.is_empty() && !text.is_empty() {
+                user_msg_map
+                    .entry(conv_id)
+                    .or_default()
+                    .push(text);
             }
         }
     }
 
     // Query bubbles with token counts
     let mut results = Vec::new();
-    let query = format!(
-        "SELECT
+    let query = "SELECT
             json_extract(value, '$.tokenCount.inputTokens') as input_tokens,
             json_extract(value, '$.tokenCount.outputTokens') as output_tokens,
             json_extract(value, '$.modelInfo.modelName') as model,
@@ -223,10 +222,9 @@ fn parse_cursor_db(db_path: &str, seen_keys: &mut HashSet<String>) -> Vec<Parsed
         WHERE key LIKE 'bubbleId:%'
             AND json_extract(value, '$.tokenCount.inputTokens') > 0
             AND json_extract(value, '$.createdAt') > ?
-        ORDER BY json_extract(value, '$.createdAt') ASC"
-    );
+        ORDER BY json_extract(value, '$.createdAt') ASC";
 
-    let mut stmt = match conn.prepare(&query) {
+    let mut stmt = match conn.prepare(query) {
         Ok(s) => s,
         Err(_) => return results,
     };
@@ -322,10 +320,9 @@ fn extract_languages(code_blocks_json: Option<&str>) -> Vec<String> {
 
     let mut langs = std::collections::HashSet::new();
     for block in &blocks {
-        if let Some(lang) = block.get("languageId").and_then(|v| v.as_str()) {
-            if !lang.is_empty() && lang != "plaintext" {
-                langs.insert(lang.to_string());
-            }
+        if let Some(lang) = block.get("languageId").and_then(|v| v.as_str())
+            && !lang.is_empty() && lang != "plaintext" {
+            langs.insert(lang.to_string());
         }
     }
     langs.into_iter().collect()
