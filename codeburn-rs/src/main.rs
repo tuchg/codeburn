@@ -4,6 +4,7 @@ mod display;
 mod export;
 mod models;
 mod parser;
+#[allow(dead_code)]
 mod providers;
 mod stats;
 mod timing;

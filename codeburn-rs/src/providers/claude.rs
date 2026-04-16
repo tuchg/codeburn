@@ -115,12 +115,12 @@ impl Provider for ClaudeProvider {
                 let entry_type = entry.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
                 if entry_type == "user" {
-                    if let Some(msg) = entry.get("message") {
-                        if msg.get("role").and_then(|r| r.as_str()) == Some("user") {
-                            let text = extract_user_message_text(msg);
-                            if !text.trim().is_empty() {
-                                pending_user_msg = text;
-                            }
+                    if let Some(msg) = entry.get("message")
+                        && msg.get("role").and_then(|r| r.as_str()) == Some("user")
+                    {
+                        let text = extract_user_message_text(msg);
+                        if !text.trim().is_empty() {
+                            pending_user_msg = text;
                         }
                     }
                     continue;

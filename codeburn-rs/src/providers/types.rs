@@ -4,6 +4,7 @@
 pub struct SessionSource {
     pub path: String,
     pub project: String,
+    #[allow(dead_code)]
     pub provider: String,
 }
 
@@ -22,6 +23,7 @@ pub struct ParsedProviderCall {
     pub tools: Vec<String>,
     pub bash_commands: Vec<String>,
     pub timestamp: String,
+    #[allow(dead_code)]
     pub speed: String,
     pub deduplication_key: String,
     pub user_message: String,

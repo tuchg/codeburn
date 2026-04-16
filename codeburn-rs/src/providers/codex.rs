@@ -226,35 +226,35 @@ impl Provider for CodexProvider {
 
             let entry_type = entry.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
-            if entry_type == "response_item" {
-                if let Some(p) = entry.get("payload") {
-                    let p_type = p.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                    if p_type == "function_call" {
-                        let raw_name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                        pending_tools.push(map_tool_name(raw_name).to_string());
-                        continue;
-                    }
-                    if p_type == "message" {
-                        let role = p.get("role").and_then(|v| v.as_str()).unwrap_or("");
-                        if role == "user" {
-                            if let Some(arr) = p.get("content").and_then(|c| c.as_array()) {
-                                let texts: Vec<String> = arr
-                                    .iter()
-                                    .filter_map(|c| {
-                                        if c.get("type")?.as_str()? == "input_text" {
-                                            c.get("text")?.as_str().map(String::from)
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .filter(|s| !s.is_empty())
-                                    .collect();
-                                if !texts.is_empty() {
-                                    pending_user_msg = texts.join(" ");
-                                }
+            if entry_type == "response_item"
+                && let Some(p) = entry.get("payload")
+            {
+                let p_type = p.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                if p_type == "function_call" {
+                    let raw_name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    pending_tools.push(map_tool_name(raw_name).to_string());
+                    continue;
+                }
+                if p_type == "message" {
+                    let role = p.get("role").and_then(|v| v.as_str()).unwrap_or("");
+                    if role == "user" {
+                        if let Some(arr) = p.get("content").and_then(|c| c.as_array()) {
+                            let texts: Vec<String> = arr
+                                .iter()
+                                .filter_map(|c| {
+                                    if c.get("type")?.as_str()? == "input_text" {
+                                        c.get("text")?.as_str().map(String::from)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            if !texts.is_empty() {
+                                pending_user_msg = texts.join(" ");
                             }
-                            continue;
                         }
+                        continue;
                     }
                 }
             }
