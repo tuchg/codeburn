@@ -44,17 +44,31 @@ impl Config {
     /// does not exist. Returns an error only for malformed TOML.
     pub fn load() -> Result<Self, String> {
         match Self::default_path() {
-            Some(path) if path.exists() => Self::load_from(&path),
-            _ => Ok(Self::default()),
+            Some(path) if path.exists() => {
+                debug!(path = %path.display(), "loading config");
+                Self::load_from(&path)
+            }
+            _ => {
+                debug!("no config file found, using defaults");
+                Ok(Self::default())
+            }
         }
     }
 
     /// Load config from a specific path.
     pub fn load_from(path: &std::path::Path) -> Result<Self, String> {
         let content = fs::read_to_string(path)
-            .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
-        toml::from_str(&content)
-            .map_err(|e| format!("failed to parse {}: {}", path.display(), e))
+            .map_err(|e| {
+                warn!(path = %path.display(), error = %e, "failed to read config");
+                format!("failed to read {}: {}", path.display(), e)
+            })?;
+        let config: Self = toml::from_str(&content)
+            .map_err(|e| {
+                warn!(path = %path.display(), error = %e, "failed to parse config");
+                format!("failed to parse {}: {}", path.display(), e)
+            })?;
+        debug!(overrides = config.pricing.len(), "config loaded");
+        Ok(config)
     }
 }
 

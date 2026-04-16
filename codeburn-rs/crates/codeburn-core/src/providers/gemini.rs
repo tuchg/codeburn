@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
+use tracing::debug;
+
 use crate::models;
 use crate::providers::types::{ParsedProviderCall, Provider, SessionSource};
 
@@ -59,7 +61,10 @@ impl Provider for GeminiProvider {
         let projects_file = self.gemini_dir.join("projects.json");
         let content = match fs::read_to_string(&projects_file) {
             Ok(c) => c,
-            Err(_) => return Vec::new(),
+            Err(e) => {
+                debug!(path = %projects_file.display(), error = %e, "gemini projects.json not found");
+                return Vec::new();
+            }
         };
 
         let data: serde_json::Value = match serde_json::from_str(&content) {

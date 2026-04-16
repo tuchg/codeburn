@@ -3,6 +3,8 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use tracing::debug;
+
 use crate::bash_utils::{extract_bash_commands, is_bash_tool};
 use crate::models;
 use crate::providers::types::{ParsedProviderCall, Provider, SessionSource};
@@ -68,7 +70,10 @@ impl Provider for PiProvider {
     fn discover_sessions(&self) -> Vec<SessionSource> {
         let project_dirs = match fs::read_dir(&self.sessions_dir) {
             Ok(e) => e,
-            Err(_) => return Vec::new(),
+            Err(e) => {
+                debug!(dir = %self.sessions_dir.display(), error = %e, "pi sessions directory not readable");
+                return Vec::new();
+            }
         };
 
         let mut sources = Vec::new();

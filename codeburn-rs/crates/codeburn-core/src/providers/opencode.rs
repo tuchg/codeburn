@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use tracing::debug;
+
 #[cfg(feature = "sqlite")]
 use crate::bash_utils::extract_bash_commands;
 use crate::models;
@@ -103,6 +105,7 @@ impl Provider for OpenCodeProvider {
         }
         #[cfg(not(feature = "sqlite"))]
         {
+            debug!("opencode provider requires sqlite feature");
             Vec::new()
         }
     }

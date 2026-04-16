@@ -3,6 +3,8 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
+use tracing::debug;
+
 use crate::models;
 use crate::providers::types::{ParsedProviderCall, Provider, SessionSource};
 
@@ -91,7 +93,10 @@ impl Provider for CopilotProvider {
     fn discover_sessions(&self) -> Vec<SessionSource> {
         let session_dirs = match fs::read_dir(&self.session_state_dir) {
             Ok(e) => e,
-            Err(_) => return Vec::new(),
+            Err(e) => {
+                debug!(dir = %self.session_state_dir.display(), error = %e, "copilot session directory not readable");
+                return Vec::new();
+            }
         };
 
         let mut sources = Vec::new();

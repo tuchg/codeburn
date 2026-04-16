@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use tracing::debug;
+
 use crate::models;
 use crate::providers::types::{ParsedProviderCall, Provider, SessionSource};
 
@@ -79,6 +81,7 @@ impl Provider for CodexProvider {
     fn discover_sessions(&self) -> Vec<SessionSource> {
         let sessions_dir = self.codex_dir.join("sessions");
         if !sessions_dir.is_dir() {
+            debug!(dir = %sessions_dir.display(), "codex sessions directory not found");
             return Vec::new();
         }
 

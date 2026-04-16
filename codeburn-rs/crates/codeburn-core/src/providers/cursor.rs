@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use tracing::debug;
+
 use crate::providers::types::{ParsedProviderCall, Provider, SessionSource};
 
 const MODEL_DISPLAY_NAMES: &[(&str, &str)] = &[
@@ -109,6 +111,7 @@ impl Provider for CursorProvider {
                 .clone()
                 .unwrap_or_else(get_cursor_db_path);
             if !db_path.exists() {
+                debug!(path = %db_path.display(), "cursor database not found");
                 return Vec::new();
             }
             return vec![SessionSource {
@@ -119,6 +122,7 @@ impl Provider for CursorProvider {
         }
         #[cfg(not(feature = "sqlite"))]
         {
+            debug!("cursor provider requires sqlite feature");
             Vec::new()
         }
     }
