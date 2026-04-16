@@ -25,13 +25,14 @@ fn tempdir() -> std::path::PathBuf {
 fn test_provider_registry_has_all_providers() {
     let providers = codeburn_core::providers::get_all_providers();
     let names: Vec<&str> = providers.iter().map(|p| p.name()).collect();
+    assert!(names.contains(&"claude"));
     assert!(names.contains(&"codex"));
     assert!(names.contains(&"cursor"));
     assert!(names.contains(&"opencode"));
     assert!(names.contains(&"gemini"));
     assert!(names.contains(&"copilot"));
     assert!(names.contains(&"pi"));
-    assert_eq!(names.len(), 6);
+    assert_eq!(names.len(), 7);
 }
 
 #[test]
@@ -40,6 +41,8 @@ fn test_provider_display_names() {
     for p in &providers {
         assert!(!p.display_name().is_empty());
     }
+    let claude = providers.iter().find(|p| p.name() == "claude").unwrap();
+    assert_eq!(claude.display_name(), "Claude");
     let codex = providers.iter().find(|p| p.name() == "codex").unwrap();
     assert_eq!(codex.display_name(), "Codex");
     let cursor = providers.iter().find(|p| p.name() == "cursor").unwrap();
@@ -56,6 +59,7 @@ fn test_provider_display_names() {
 
 #[test]
 fn test_get_provider_by_name() {
+    assert!(codeburn_core::providers::get_provider("claude").is_some());
     assert!(codeburn_core::providers::get_provider("codex").is_some());
     assert!(codeburn_core::providers::get_provider("cursor").is_some());
     assert!(codeburn_core::providers::get_provider("opencode").is_some());
@@ -63,7 +67,6 @@ fn test_get_provider_by_name() {
     assert!(codeburn_core::providers::get_provider("copilot").is_some());
     assert!(codeburn_core::providers::get_provider("pi").is_some());
     assert!(codeburn_core::providers::get_provider("nonexistent").is_none());
-    assert!(codeburn_core::providers::get_provider("claude").is_none());
 }
 
 // ==================== Codex Provider ====================

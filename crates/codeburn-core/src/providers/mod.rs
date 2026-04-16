@@ -1,4 +1,5 @@
 pub mod types;
+pub mod claude;
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
@@ -8,6 +9,7 @@ pub mod pi;
 
 pub fn get_all_providers() -> Vec<Box<dyn types::Provider + Send + Sync>> {
     vec![
+        Box::new(claude::ClaudeProvider::new(claude::ClaudeProvider::default_dir())),
         Box::new(codex::CodexProvider::new(codex::CodexProvider::default_dir())),
         Box::new(cursor::CursorProvider::new(None)),
         Box::new(opencode::OpenCodeProvider::new(
@@ -25,6 +27,9 @@ pub fn get_all_providers() -> Vec<Box<dyn types::Provider + Send + Sync>> {
 
 pub fn get_provider(name: &str) -> Option<Box<dyn types::Provider + Send + Sync>> {
     match name {
+        "claude" => Some(Box::new(claude::ClaudeProvider::new(
+            claude::ClaudeProvider::default_dir(),
+        ))),
         "codex" => Some(Box::new(codex::CodexProvider::new(
             codex::CodexProvider::default_dir(),
         ))),
