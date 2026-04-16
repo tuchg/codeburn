@@ -1,0 +1,20 @@
+[package]
+name = "codeburn"
+description = "See where your AI coding tokens go -- with timing, file changes, and code diff stats"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "codeburn"
+path = "src/main.rs"
+
+[dependencies]
+codeburn-core = { path = "../codeburn-core" }
+codeburn-tui = { path = "../codeburn-tui" }
+codeburn-csv = { path = "../codeburn-csv" }
+clap = { workspace = true }
+chrono = { workspace = true }
+colored = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

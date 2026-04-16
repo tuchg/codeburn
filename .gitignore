@@ -1,7 +1,3 @@
-node_modules/
-dist/
-*.tgz
-
 # OS
 .DS_Store
 Thumbs.db
@@ -24,11 +20,7 @@ docs/superpowers/
 
 # Debug / logs
 *.log
-npm-debug.log*
 
-# Cache
-.cache/
-*.sqlite
-
-# Build artifacts
-*.tsbuildinfo
+# Rust
+/target/
+Cargo.lock
