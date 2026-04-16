@@ -6,6 +6,7 @@ use chrono::DateTime;
 use dashmap::DashMap;
 use rayon::prelude::*;
 use serde::Deserialize;
+use tracing::{debug, info, warn};
 
 use crate::bash_utils::{extract_bash_commands, is_bash_tool};
 use crate::classifier;
@@ -470,7 +471,13 @@ fn parse_session_file(
     seen_ids: &mut HashSet<String>,
     date_range: &DateRange,
 ) -> Option<SessionSummary> {
-    let content = fs::read_to_string(file_path).ok()?;
+    let content = match fs::read_to_string(file_path) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(path = %file_path.display(), error = %e, "failed to read session file");
+            return None;
+        }
+    };
     let entries: Vec<JournalEntry> = content
         .lines()
         .filter(|l| !l.trim().is_empty())
@@ -553,6 +560,7 @@ fn unsanitize_path(dir_name: &str) -> String {
 /// Discover and parse Claude Code sessions
 fn discover_claude_sessions(claude_dir: &Path, date_range: &DateRange) -> Vec<ProjectSummary> {
     let projects_dir = claude_dir.join("projects");
+    debug!(dir = %projects_dir.display(), "scanning claude projects directory");
     let mut seen_ids = HashSet::new();
     let mut project_map: HashMap<String, Vec<SessionSummary>> = HashMap::new();
 
@@ -561,7 +569,10 @@ fn discover_claude_sessions(claude_dir: &Path, date_range: &DateRange) -> Vec<Pr
             .flatten()
             .filter(|e| e.path().is_dir())
             .collect::<Vec<_>>(),
-        Err(_) => return Vec::new(),
+        Err(e) => {
+            debug!(dir = %projects_dir.display(), error = %e, "claude projects directory not found");
+            return Vec::new();
+        }
     };
 
     for dir_entry in project_dirs {
@@ -630,15 +641,22 @@ pub fn discover_and_parse(
     date_range: &DateRange,
     provider_filter: Option<&ProviderKind>,
 ) -> Vec<ProjectSummary> {
+    info!(
+        start = %date_range.start,
+        end = %date_range.end,
+        filter = ?provider_filter,
+        "starting session discovery"
+    );
     let claude_dir = get_claude_dir();
     let all_projects: DashMap<String, ProjectSummary> = DashMap::new();
 
     let include_claude = provider_filter.is_none()
         || provider_filter == Some(&ProviderKind::Claude);
 
-    // Claude is parsed specially (full turn grouping, file change tracking)
     if include_claude {
-        for p in discover_claude_sessions(&claude_dir, date_range) {
+        let claude_projects = discover_claude_sessions(&claude_dir, date_range);
+        debug!(count = claude_projects.len(), "discovered claude projects");
+        for p in claude_projects {
             merge_into_dashmap(&all_projects, p);
         }
     }
@@ -652,9 +670,19 @@ pub fn discover_and_parse(
             _ => Vec::new(),
         };
 
-    // Parse each non-Claude provider in parallel; DashMap provides lock-free concurrent writes.
+    debug!(
+        providers = providers.iter().map(|p| p.name()).collect::<Vec<_>>().join(", "),
+        "parsing non-claude providers in parallel"
+    );
+
     providers.par_iter().for_each(|provider| {
-        for p in parse_provider_sessions(provider.as_ref(), date_range) {
+        let provider_projects = parse_provider_sessions(provider.as_ref(), date_range);
+        debug!(
+            provider = provider.name(),
+            projects = provider_projects.len(),
+            "provider parsing complete"
+        );
+        for p in provider_projects {
             merge_into_dashmap(&all_projects, p);
         }
     });
@@ -662,6 +690,11 @@ pub fn discover_and_parse(
     let mut projects: Vec<ProjectSummary> =
         all_projects.into_iter().map(|(_, v)| v).collect();
     projects.sort_by(|a, b| b.total_cost_usd.partial_cmp(&a.total_cost_usd).unwrap());
+    info!(
+        total_projects = projects.len(),
+        total_cost = projects.iter().map(|p| p.total_cost_usd).sum::<f64>(),
+        "discovery complete"
+    );
     projects
 }
 
@@ -686,6 +719,11 @@ fn parse_provider_sessions(
     date_range: &DateRange,
 ) -> Vec<ProjectSummary> {
     let sources = provider.discover_sessions();
+    debug!(
+        provider = provider.name(),
+        sessions = sources.len(),
+        "discovered provider sessions"
+    );
     if sources.is_empty() {
         return Vec::new();
     }

@@ -19,6 +19,7 @@ dashmap = { workspace = true }
 toml = { workspace = true }
 clap = { workspace = true }
 rusqlite = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 [features]
 default = []

@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::Deserialize;
+use tracing::{debug, warn};
 
 /// Per-model pricing override (per-token rates in USD).
 #[derive(Debug, Clone, Deserialize)]

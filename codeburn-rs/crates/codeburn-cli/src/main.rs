@@ -4,6 +4,7 @@ use std::io::IsTerminal;
 
 use chrono::NaiveDate;
 use clap::{Parser, Subcommand};
+use tracing_subscriber::EnvFilter;
 
 use codeburn_core::parser::discover_and_parse;
 use codeburn_core::types::{DateSpec, Period, ProviderKind};
@@ -82,6 +83,11 @@ fn resolve_date_spec(period: Period, since: &Option<NaiveDate>, until: &Option<N
 }
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .init();
+
     let cli = Cli::parse();
 
     match &cli.command {
