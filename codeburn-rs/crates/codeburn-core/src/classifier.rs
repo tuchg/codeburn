@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 
 use crate::bash_utils::is_bash_tool;
@@ -33,6 +35,43 @@ const TASK_TOOLS: &[&str] = &[
 ];
 
 const SEARCH_TOOLS: &[&str] = &["WebSearch", "WebFetch", "ToolSearch"];
+
+static RE_TEST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(test|pytest|vitest|jest|mocha|spec|coverage|npm\s+test|npx\s+vitest|npx\s+jest)\b").unwrap()
+});
+static RE_GIT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\bgit\s+(push|pull|commit|merge|rebase|checkout|branch|stash|log|diff|status|add|reset|cherry-pick|tag)\b").unwrap()
+});
+static RE_BUILD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(npm\s+run\s+build|npm\s+publish|pip\s+install|docker|deploy|make\s+build|npm\s+run\s+dev|npm\s+start|pm2|systemctl|brew|cargo\s+build)\b").unwrap()
+});
+static RE_INSTALL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(npm\s+install|pip\s+install|brew\s+install|apt\s+install|cargo\s+add)\b").unwrap()
+});
+static RE_DEBUG: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(fix|bug|error|broken|failing|crash|issue|debug|traceback|exception|stack\s*trace|not\s+working|wrong|unexpected|status\s+code|404|500|401|403)\b").unwrap()
+});
+static RE_FEATURE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(add|create|implement|new|build|feature|introduce|set\s*up|scaffold|generate|make\s+(?:a|me|the)|write\s+(?:a|me|the))\b").unwrap()
+});
+static RE_REFACTOR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(refactor|clean\s*up|rename|reorganize|simplify|extract|restructure|move|migrate|split)\b").unwrap()
+});
+static RE_RESEARCH: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(research|investigate|look\s+into|find\s+out|check|search|analyze|review|understand|explain|how\s+does|what\s+is|show\s+me|list|compare)\b").unwrap()
+});
+static RE_BRAINSTORM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(brainstorm|idea|what\s+if|explore|think\s+about|approach|strategy|design|consider|how\s+should|what\s+would|opinion|suggest|recommend)\b").unwrap()
+});
+static RE_FILE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\.(py|js|ts|tsx|jsx|json|yaml|yml|toml|sql|sh|go|rs|java|rb|php|css|html|md|csv|xml)\b").unwrap()
+});
+static RE_SCRIPT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(run\s+\S+\.\w+|execute|scrip?t|curl|api\s+\S+|endpoint|request\s+url|fetch\s+\S+|query|database|db\s+\S+)\b").unwrap()
+});
+static RE_URL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)https?://\S+").unwrap()
+});
 
 pub fn has_edit_tools(tools: &[String]) -> bool {
     tools.iter().any(|t| EDIT_TOOLS.contains(&t.as_str()))
@@ -91,21 +130,16 @@ fn classify_by_tool_pattern(all_tools: &[String], user_msg: &str) -> Option<Stri
     let has_skill = has_skill_tool(all_tools);
 
     if has_bash && !has_edits {
-        let test_re = Regex::new(r"(?i)\b(test|pytest|vitest|jest|mocha|spec|coverage|npm\s+test|npx\s+vitest|npx\s+jest)\b").unwrap();
-        let git_re = Regex::new(r"(?i)\bgit\s+(push|pull|commit|merge|rebase|checkout|branch|stash|log|diff|status|add|reset|cherry-pick|tag)\b").unwrap();
-        let build_re = Regex::new(r"(?i)\b(npm\s+run\s+build|npm\s+publish|pip\s+install|docker|deploy|make\s+build|npm\s+run\s+dev|npm\s+start|pm2|systemctl|brew|cargo\s+build)\b").unwrap();
-        let install_re = Regex::new(r"(?i)\b(npm\s+install|pip\s+install|brew\s+install|apt\s+install|cargo\s+add)\b").unwrap();
-
-        if test_re.is_match(user_msg) {
+        if RE_TEST.is_match(user_msg) {
             return Some("testing".to_string());
         }
-        if git_re.is_match(user_msg) {
+        if RE_GIT.is_match(user_msg) {
             return Some("git".to_string());
         }
-        if build_re.is_match(user_msg) {
+        if RE_BUILD.is_match(user_msg) {
             return Some("build/deploy".to_string());
         }
-        if install_re.is_match(user_msg) {
+        if RE_INSTALL.is_match(user_msg) {
             return Some("build/deploy".to_string());
         }
     }
@@ -138,29 +172,24 @@ fn classify_by_tool_pattern(all_tools: &[String], user_msg: &str) -> Option<Stri
 }
 
 fn refine_by_keywords(category: &str, user_msg: &str) -> String {
-    let debug_re = Regex::new(r"(?i)\b(fix|bug|error|broken|failing|crash|issue|debug|traceback|exception|stack\s*trace|not\s+working|wrong|unexpected|status\s+code|404|500|401|403)\b").unwrap();
-    let feature_re = Regex::new(r"(?i)\b(add|create|implement|new|build|feature|introduce|set\s*up|scaffold|generate|make\s+(?:a|me|the)|write\s+(?:a|me|the))\b").unwrap();
-    let refactor_re = Regex::new(r"(?i)\b(refactor|clean\s*up|rename|reorganize|simplify|extract|restructure|move|migrate|split)\b").unwrap();
-    let research_re = Regex::new(r"(?i)\b(research|investigate|look\s+into|find\s+out|check|search|analyze|review|understand|explain|how\s+does|what\s+is|show\s+me|list|compare)\b").unwrap();
-
     match category {
         "coding" => {
-            if debug_re.is_match(user_msg) {
+            if RE_DEBUG.is_match(user_msg) {
                 return "debugging".to_string();
             }
-            if refactor_re.is_match(user_msg) {
+            if RE_REFACTOR.is_match(user_msg) {
                 return "refactoring".to_string();
             }
-            if feature_re.is_match(user_msg) {
+            if RE_FEATURE.is_match(user_msg) {
                 return "feature".to_string();
             }
             "coding".to_string()
         }
         "exploration" => {
-            if research_re.is_match(user_msg) {
+            if RE_RESEARCH.is_match(user_msg) {
                 return "exploration".to_string();
             }
-            if debug_re.is_match(user_msg) {
+            if RE_DEBUG.is_match(user_msg) {
                 return "debugging".to_string();
             }
             "exploration".to_string()
@@ -170,33 +199,25 @@ fn refine_by_keywords(category: &str, user_msg: &str) -> String {
 }
 
 fn classify_conversation(user_msg: &str) -> String {
-    let brainstorm_re = Regex::new(r"(?i)\b(brainstorm|idea|what\s+if|explore|think\s+about|approach|strategy|design|consider|how\s+should|what\s+would|opinion|suggest|recommend)\b").unwrap();
-    let research_re = Regex::new(r"(?i)\b(research|investigate|look\s+into|find\s+out|check|search|analyze|review|understand|explain|how\s+does|what\s+is|show\s+me|list|compare)\b").unwrap();
-    let debug_re = Regex::new(r"(?i)\b(fix|bug|error|broken|failing|crash|issue|debug|traceback|exception|stack\s*trace|not\s+working|wrong|unexpected|status\s+code|404|500|401|403)\b").unwrap();
-    let feature_re = Regex::new(r"(?i)\b(add|create|implement|new|build|feature|introduce|set\s*up|scaffold|generate|make\s+(?:a|me|the)|write\s+(?:a|me|the))\b").unwrap();
-    let file_re = Regex::new(r"(?i)\.(py|js|ts|tsx|jsx|json|yaml|yml|toml|sql|sh|go|rs|java|rb|php|css|html|md|csv|xml)\b").unwrap();
-    let script_re = Regex::new(r"(?i)\b(run\s+\S+\.\w+|execute|scrip?t|curl|api\s+\S+|endpoint|request\s+url|fetch\s+\S+|query|database|db\s+\S+)\b").unwrap();
-    let url_re = Regex::new(r"(?i)https?://\S+").unwrap();
-
-    if brainstorm_re.is_match(user_msg) {
+    if RE_BRAINSTORM.is_match(user_msg) {
         return "brainstorming".to_string();
     }
-    if research_re.is_match(user_msg) {
+    if RE_RESEARCH.is_match(user_msg) {
         return "exploration".to_string();
     }
-    if debug_re.is_match(user_msg) {
+    if RE_DEBUG.is_match(user_msg) {
         return "debugging".to_string();
     }
-    if feature_re.is_match(user_msg) {
+    if RE_FEATURE.is_match(user_msg) {
         return "feature".to_string();
     }
-    if file_re.is_match(user_msg) {
+    if RE_FILE.is_match(user_msg) {
         return "coding".to_string();
     }
-    if script_re.is_match(user_msg) {
+    if RE_SCRIPT.is_match(user_msg) {
         return "coding".to_string();
     }
-    if url_re.is_match(user_msg) {
+    if RE_URL.is_match(user_msg) {
         return "exploration".to_string();
     }
     "conversation".to_string()

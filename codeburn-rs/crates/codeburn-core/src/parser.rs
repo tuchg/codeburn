@@ -384,7 +384,7 @@ fn build_session_summary(
 
         for call in &turn.calls {
             total_cost += call.cost_usd;
-            tokens += call.usage.clone();
+            tokens += call.usage;
             api_calls += 1;
             total_added += call.lines_added;
             total_removed += call.lines_removed;
@@ -398,7 +398,7 @@ fn build_session_summary(
             let model_entry = model_map.entry(model_key).or_default();
             model_entry.calls += 1;
             model_entry.cost_usd += call.cost_usd;
-            model_entry.tokens += call.usage.clone();
+            model_entry.tokens += call.usage;
 
             // Core tools
             for tool in extract_core_tools(&call.tools) {
@@ -700,17 +700,21 @@ pub fn discover_and_parse(
 
 /// Merge a parsed project into the shared DashMap without any external lock.
 fn merge_into_dashmap(map: &DashMap<String, ProjectSummary>, p: ProjectSummary) {
-    map.entry(p.project.clone())
-        .and_modify(|existing| {
-            existing.sessions.extend(p.sessions.clone());
+    match map.entry(p.project.clone()) {
+        dashmap::mapref::entry::Entry::Occupied(mut e) => {
+            let existing = e.get_mut();
+            existing.sessions.extend(p.sessions);
             existing.total_cost_usd += p.total_cost_usd;
             existing.total_api_calls += p.total_api_calls;
             existing.total_files_changed += p.total_files_changed;
             existing.total_lines_added += p.total_lines_added;
             existing.total_lines_removed += p.total_lines_removed;
             existing.total_duration_seconds += p.total_duration_seconds;
-        })
-        .or_insert(p);
+        }
+        dashmap::mapref::entry::Entry::Vacant(e) => {
+            e.insert(p);
+        }
+    }
 }
 
 /// Parse sessions from any provider using the Provider trait

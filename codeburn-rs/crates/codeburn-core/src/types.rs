@@ -175,7 +175,7 @@ impl From<Period> for DateSpec {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TokenUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -246,7 +246,7 @@ pub struct SessionSummary {
     pub category_breakdown: Vec<(String, CategoryStats)>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CategoryStats {
     pub turns: u64,
     pub cost_usd: f64,
@@ -289,7 +289,7 @@ pub struct Report {
     pub bash_breakdown: Vec<(String, u64)>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ModelStats {
     pub calls: u64,
     pub cost_usd: f64,

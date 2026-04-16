@@ -27,7 +27,7 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
         total_sessions += project.sessions.len() as u64;
 
         for session in &project.sessions {
-            total_tokens += session.tokens.clone();
+            total_tokens += session.tokens;
 
             for (cat, stats) in &session.category_breakdown {
                 let entry = category_map.entry(cat.clone()).or_default();
@@ -44,7 +44,7 @@ pub fn build_report(projects: &[ProjectSummary], label: &str) -> Report {
                 let entry = model_map.entry(model.clone()).or_default();
                 entry.calls += stats.calls;
                 entry.cost_usd += stats.cost_usd;
-                entry.tokens += stats.tokens.clone();
+                entry.tokens += stats.tokens;
             }
 
             for (tool, count) in &session.tool_breakdown {
