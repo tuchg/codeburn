@@ -4,6 +4,7 @@ mod display;
 mod export;
 mod models;
 mod parser;
+mod providers;
 mod stats;
 mod timing;
 mod types;

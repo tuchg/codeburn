@@ -4,6 +4,7 @@ pub mod display;
 pub mod export;
 pub mod models;
 pub mod parser;
+pub mod providers;
 pub mod stats;
 pub mod timing;
 pub mod types;

@@ -31,7 +31,7 @@ const FALLBACK_PRICING: &[(&str, ModelCosts)] = &[
     ("gpt-5", ModelCosts { input: 2.5e-6, output: 10e-6, cache_write: 2.5e-6, cache_read: 1.25e-6, web_search: WEB_SEARCH_COST, fast_multiplier: 1.0 }),
 ];
 
-fn get_canonical_name(model: &str) -> &str {
+pub fn get_canonical_name(model: &str) -> &str {
     let s = model.split('@').next().unwrap_or(model);
     // Strip trailing date suffix like -20260205
     if s.len() > 9 {

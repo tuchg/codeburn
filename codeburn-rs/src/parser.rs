@@ -556,378 +556,6 @@ fn discover_claude_sessions(claude_dir: &Path, date_range: &DateRange) -> Vec<Pr
     project_map_to_summaries(project_map)
 }
 
-/// Discover and parse Codex sessions from ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
-fn discover_codex_sessions(date_range: &DateRange) -> Vec<ProjectSummary> {
-    let codex_dir = std::env::var("CODEX_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            dirs::home_dir()
-                .map(|h| h.join(".codex"))
-                .unwrap_or_else(|| PathBuf::from(".codex"))
-        });
-
-    let sessions_dir = codex_dir.join("sessions");
-    if !sessions_dir.is_dir() {
-        return Vec::new();
-    }
-
-    let mut seen_keys = HashSet::new();
-    let mut project_map: HashMap<String, Vec<SessionSummary>> = HashMap::new();
-
-    // Walk YYYY/MM/DD structure
-    let years = fs::read_dir(&sessions_dir)
-        .ok()
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            name.len() == 4 && name.chars().all(|c| c.is_ascii_digit()) && e.path().is_dir()
-        });
-
-    for year_entry in years {
-        let months = fs::read_dir(year_entry.path())
-            .ok()
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                name.len() == 2 && name.chars().all(|c| c.is_ascii_digit()) && e.path().is_dir()
-            });
-
-        for month_entry in months {
-            let days = fs::read_dir(month_entry.path())
-                .ok()
-                .into_iter()
-                .flatten()
-                .flatten()
-                .filter(|e| {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    name.len() == 2
-                        && name.chars().all(|c| c.is_ascii_digit())
-                        && e.path().is_dir()
-                });
-
-            for day_entry in days {
-                let files = fs::read_dir(day_entry.path())
-                    .ok()
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                    .filter(|e| {
-                        let name = e.file_name().to_string_lossy().to_string();
-                        name.starts_with("rollout-") && name.ends_with(".jsonl") && e.path().is_file()
-                    });
-
-                for file_entry in files {
-                    if let Some(sessions) = parse_codex_session_file(
-                        &file_entry.path(),
-                        &mut seen_keys,
-                        date_range,
-                    ) {
-                        for (project, session) in sessions {
-                            project_map.entry(project).or_default().push(session);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    project_map_to_summaries(project_map)
-}
-
-/// Codex tool name mapping
-fn codex_tool_name(raw: &str) -> &str {
-    match raw {
-        "exec_command" => "Bash",
-        "read_file" => "Read",
-        "write_file" => "Edit",
-        "apply_diff" | "apply_patch" => "Edit",
-        "spawn_agent" | "close_agent" | "wait_agent" => "Agent",
-        "read_dir" => "Glob",
-        _ => raw,
-    }
-}
-
-/// Parse a single Codex session JSONL file
-fn parse_codex_session_file(
-    file_path: &Path,
-    seen_keys: &mut HashSet<String>,
-    date_range: &DateRange,
-) -> Option<Vec<(String, SessionSummary)>> {
-    let content = fs::read_to_string(file_path).ok()?;
-    let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-
-    if lines.is_empty() {
-        return None;
-    }
-
-    // Read first line for session_meta
-    let first: serde_json::Value = serde_json::from_str(lines[0]).ok()?;
-    if first.get("type")?.as_str()? != "session_meta" {
-        return None;
-    }
-    let payload = first.get("payload")?;
-    let originator = payload.get("originator")?.as_str()?;
-    if !originator.to_lowercase().starts_with("codex") {
-        return None;
-    }
-
-    let cwd = payload
-        .get("cwd")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-    let project = cwd.trim_start_matches('/').replace('/', "-");
-    let session_id = payload
-        .get("session_id")
-        .and_then(|v| v.as_str())
-        .map(String::from)
-        .unwrap_or_else(|| {
-            file_path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default()
-        });
-    let session_model = payload
-        .get("model")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-
-    let mut prev_cumulative_total: u64 = 0;
-    let mut prev_input: u64 = 0;
-    let mut prev_cached: u64 = 0;
-    let mut prev_output: u64 = 0;
-    let mut prev_reasoning: u64 = 0;
-    let mut pending_tools: Vec<String> = Vec::new();
-    let mut pending_user_msg = String::new();
-    let mut calls: Vec<ParsedApiCall> = Vec::new();
-
-    for line in &lines[1..] {
-        let entry: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        let entry_type = entry.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-        // Function calls (tools)
-        if entry_type == "response_item" {
-            let payload = entry.get("payload");
-            if let Some(p) = payload {
-                let p_type = p.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                if p_type == "function_call" {
-                    let raw_name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    pending_tools.push(codex_tool_name(raw_name).to_string());
-                    continue;
-                }
-                if p_type == "message" {
-                    let role = p.get("role").and_then(|v| v.as_str()).unwrap_or("");
-                    if role == "user" {
-                        if let Some(arr) = p.get("content").and_then(|c| c.as_array()) {
-                            let texts: Vec<String> = arr
-                                .iter()
-                                .filter_map(|c| {
-                                    if c.get("type")?.as_str()? == "input_text" {
-                                        c.get("text")?.as_str().map(String::from)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .filter(|s| !s.is_empty())
-                                .collect();
-                            if !texts.is_empty() {
-                                pending_user_msg = texts.join(" ");
-                            }
-                        }
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // Token count events
-        if entry_type == "event_msg" {
-            let payload = match entry.get("payload") {
-                Some(p) => p,
-                None => continue,
-            };
-            if payload.get("type").and_then(|v| v.as_str()) != Some("token_count") {
-                continue;
-            }
-            let info = match payload.get("info") {
-                Some(i) => i,
-                None => continue,
-            };
-
-            let cumulative_total = info
-                .get("total_token_usage")
-                .and_then(|t| t.get("total_tokens"))
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-
-            if cumulative_total > 0 && cumulative_total == prev_cumulative_total {
-                continue;
-            }
-            prev_cumulative_total = cumulative_total;
-
-            let (input_tokens, cached_input, output_tokens, reasoning_tokens);
-
-            if let Some(last) = info.get("last_token_usage") {
-                input_tokens = last
-                    .get("input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                cached_input = last
-                    .get("cached_input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                output_tokens = last
-                    .get("output_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                reasoning_tokens = last
-                    .get("reasoning_output_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-            } else if cumulative_total > 0 {
-                let total = match info.get("total_token_usage") {
-                    Some(t) => t,
-                    None => continue,
-                };
-                let ti = total.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                let tc = total.get("cached_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                let to = total.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                let tr = total.get("reasoning_output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                input_tokens = ti.saturating_sub(prev_input);
-                cached_input = tc.saturating_sub(prev_cached);
-                output_tokens = to.saturating_sub(prev_output);
-                reasoning_tokens = tr.saturating_sub(prev_reasoning);
-                prev_input = ti;
-                prev_cached = tc;
-                prev_output = to;
-                prev_reasoning = tr;
-            } else {
-                continue;
-            }
-
-            let total_tokens = input_tokens + cached_input + output_tokens + reasoning_tokens;
-            if total_tokens == 0 {
-                continue;
-            }
-
-            // Normalize OpenAI semantics: inputTokens includes cached
-            let uncached_input = input_tokens.saturating_sub(cached_input);
-
-            let model = info
-                .get("model")
-                .or_else(|| info.get("model_name"))
-                .and_then(|v| v.as_str())
-                .map(String::from)
-                .or_else(|| session_model.clone())
-                .unwrap_or_else(|| "gpt-5".to_string());
-
-            let timestamp = entry
-                .get("timestamp")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            let dedup_key = format!(
-                "codex:{}:{}:{}",
-                file_path.display(),
-                timestamp,
-                cumulative_total
-            );
-
-            if seen_keys.contains(&dedup_key) {
-                continue;
-            }
-            seen_keys.insert(dedup_key.clone());
-
-            // Filter by date range
-            if !timestamp.is_empty()
-                && let Ok(ts) = DateTime::parse_from_rfc3339(&timestamp)
-            {
-                let date = ts.date_naive();
-                if date < date_range.start || date >= date_range.end {
-                    pending_tools.clear();
-                    pending_user_msg.clear();
-                    continue;
-                }
-            }
-
-            let cost_usd = models::calculate_cost(
-                &model,
-                uncached_input,
-                output_tokens + reasoning_tokens,
-                0,
-                cached_input,
-                0,
-                "standard",
-            );
-
-            calls.push(ParsedApiCall {
-                provider: "codex".to_string(),
-                model,
-                usage: TokenUsage {
-                    input_tokens: uncached_input,
-                    output_tokens,
-                    cache_creation_tokens: 0,
-                    cache_read_tokens: cached_input,
-                    cached_tokens: cached_input,
-                    reasoning_tokens,
-                    web_search_requests: 0,
-                },
-                cost_usd,
-                tools: std::mem::take(&mut pending_tools),
-                mcp_tools: vec![],
-                bash_commands: vec![],
-                timestamp,
-                file_paths: vec![],
-                lines_added: 0,
-                lines_removed: 0,
-                deduplication_key: dedup_key,
-            });
-
-            pending_user_msg.clear();
-        }
-    }
-
-    if calls.is_empty() {
-        return None;
-    }
-
-    // Build a single-turn session from each call (matching TS behavior)
-    let turns: Vec<ParsedTurn> = calls
-        .into_iter()
-        .map(|call| {
-            let all_tools = call.tools.clone();
-            let category = classifier::classify_turn(&all_tools, "");
-            let retries = 0;
-            let has_edits = classifier::has_edit_tools(&all_tools);
-            ParsedTurn {
-                user_message: String::new(),
-                calls: vec![call],
-                timestamp: String::new(),
-                session_id: session_id.clone(),
-                category,
-                retries,
-                has_edits,
-            }
-        })
-        .collect();
-
-    let summary = build_session_summary(&session_id, &project, turns);
-
-    if summary.api_calls > 0 {
-        Some(vec![(project, summary)])
-    } else {
-        None
-    }
-}
-
 fn project_map_to_summaries(
     project_map: HashMap<String, Vec<SessionSummary>>,
 ) -> Vec<ProjectSummary> {
@@ -963,55 +591,162 @@ fn project_map_to_summaries(
 pub fn discover_and_parse(claude_dir: &Path, date_range: &DateRange) -> Vec<ProjectSummary> {
     let mut all_projects: HashMap<String, ProjectSummary> = HashMap::new();
 
-    // Claude sessions
+    // Claude sessions (full parsing with turn grouping, file changes, etc.)
     for p in discover_claude_sessions(claude_dir, date_range) {
-        let existing = all_projects.entry(p.project.clone()).or_insert_with(|| {
-            ProjectSummary {
-                project: p.project.clone(),
-                project_path: p.project_path.clone(),
-                sessions: vec![],
-                total_cost_usd: 0.0,
-                total_api_calls: 0,
-                total_files_changed: 0,
-                total_lines_added: 0,
-                total_lines_removed: 0,
-                total_duration_seconds: 0.0,
-            }
-        });
-        existing.sessions.extend(p.sessions);
-        existing.total_cost_usd += p.total_cost_usd;
-        existing.total_api_calls += p.total_api_calls;
-        existing.total_files_changed += p.total_files_changed;
-        existing.total_lines_added += p.total_lines_added;
-        existing.total_lines_removed += p.total_lines_removed;
-        existing.total_duration_seconds += p.total_duration_seconds;
+        merge_project(&mut all_projects, p);
     }
 
-    // Codex sessions
-    for p in discover_codex_sessions(date_range) {
-        let existing = all_projects.entry(p.project.clone()).or_insert_with(|| {
-            ProjectSummary {
-                project: p.project.clone(),
-                project_path: p.project_path.clone(),
-                sessions: vec![],
-                total_cost_usd: 0.0,
-                total_api_calls: 0,
-                total_files_changed: 0,
-                total_lines_added: 0,
-                total_lines_removed: 0,
-                total_duration_seconds: 0.0,
-            }
-        });
-        existing.sessions.extend(p.sessions);
-        existing.total_cost_usd += p.total_cost_usd;
-        existing.total_api_calls += p.total_api_calls;
-        existing.total_files_changed += p.total_files_changed;
-        existing.total_lines_added += p.total_lines_added;
-        existing.total_lines_removed += p.total_lines_removed;
-        existing.total_duration_seconds += p.total_duration_seconds;
+    // Codex sessions via provider
+    let codex_provider = crate::providers::codex::CodexProvider::new(
+        crate::providers::codex::CodexProvider::default_dir(),
+    );
+    for p in parse_provider_sessions(&codex_provider, date_range) {
+        merge_project(&mut all_projects, p);
+    }
+
+    // Cursor sessions via provider
+    let cursor_provider = crate::providers::cursor::CursorProvider::new(None);
+    for p in parse_provider_sessions(&cursor_provider, date_range) {
+        merge_project(&mut all_projects, p);
+    }
+
+    // OpenCode sessions via provider
+    let opencode_provider = crate::providers::opencode::OpenCodeProvider::new(
+        crate::providers::opencode::OpenCodeProvider::default_dir(),
+    );
+    for p in parse_provider_sessions(&opencode_provider, date_range) {
+        merge_project(&mut all_projects, p);
     }
 
     let mut projects: Vec<ProjectSummary> = all_projects.into_values().collect();
     projects.sort_by(|a, b| b.total_cost_usd.partial_cmp(&a.total_cost_usd).unwrap());
     projects
+}
+
+fn merge_project(
+    all_projects: &mut HashMap<String, ProjectSummary>,
+    p: ProjectSummary,
+) {
+    let existing = all_projects.entry(p.project.clone()).or_insert_with(|| {
+        ProjectSummary {
+            project: p.project.clone(),
+            project_path: p.project_path.clone(),
+            sessions: vec![],
+            total_cost_usd: 0.0,
+            total_api_calls: 0,
+            total_files_changed: 0,
+            total_lines_added: 0,
+            total_lines_removed: 0,
+            total_duration_seconds: 0.0,
+        }
+    });
+    existing.sessions.extend(p.sessions);
+    existing.total_cost_usd += p.total_cost_usd;
+    existing.total_api_calls += p.total_api_calls;
+    existing.total_files_changed += p.total_files_changed;
+    existing.total_lines_added += p.total_lines_added;
+    existing.total_lines_removed += p.total_lines_removed;
+    existing.total_duration_seconds += p.total_duration_seconds;
+}
+
+/// Parse sessions from any provider using the Provider trait
+fn parse_provider_sessions(
+    provider: &dyn crate::providers::types::Provider,
+    date_range: &DateRange,
+) -> Vec<ProjectSummary> {
+    let sources = provider.discover_sessions();
+    if sources.is_empty() {
+        return Vec::new();
+    }
+
+    let mut seen_keys = HashSet::new();
+    let mut turn_map: HashMap<String, Vec<ParsedTurn>> = HashMap::new();
+
+    for source in &sources {
+        let calls = provider.parse_session(source, &mut seen_keys);
+
+        for call in calls {
+            // Date filtering
+            if !call.timestamp.is_empty() {
+                if let Ok(ts) = DateTime::parse_from_rfc3339(&call.timestamp) {
+                    let date = ts.date_naive();
+                    if date < date_range.start || date >= date_range.end {
+                        continue;
+                    }
+                } else if let Ok(ts) = call.timestamp.parse::<DateTime<chrono::Utc>>() {
+                    let date = ts.date_naive();
+                    if date < date_range.start || date >= date_range.end {
+                        continue;
+                    }
+                }
+            }
+
+            // Convert to ParsedApiCall
+            let api_call = ParsedApiCall {
+                provider: call.provider.clone(),
+                model: call.model.clone(),
+                usage: TokenUsage {
+                    input_tokens: call.input_tokens,
+                    output_tokens: call.output_tokens,
+                    cache_creation_tokens: call.cache_creation_input_tokens,
+                    cache_read_tokens: call.cache_read_input_tokens,
+                    cached_tokens: call.cached_input_tokens,
+                    reasoning_tokens: call.reasoning_tokens,
+                    web_search_requests: call.web_search_requests,
+                },
+                cost_usd: call.cost_usd,
+                tools: call.tools.clone(),
+                mcp_tools: extract_mcp_tools(&call.tools),
+                bash_commands: call.bash_commands.clone(),
+                timestamp: call.timestamp.clone(),
+                file_paths: vec![],
+                lines_added: 0,
+                lines_removed: 0,
+                deduplication_key: call.deduplication_key.clone(),
+            };
+
+            let all_tools = api_call.tools.clone();
+            let category = classifier::classify_turn(&all_tools, &call.user_message);
+            let has_edits = classifier::has_edit_tools(&all_tools);
+
+            let turn = ParsedTurn {
+                user_message: call.user_message.clone(),
+                calls: vec![api_call],
+                timestamp: call.timestamp.clone(),
+                session_id: call.session_id.clone(),
+                category,
+                retries: 0,
+                has_edits,
+            };
+
+            let key = format!(
+                "{}:{}:{}",
+                call.provider, call.session_id, source.project
+            );
+
+            turn_map
+                .entry(key)
+                .or_default()
+                .push(turn);
+        }
+    }
+
+    // Build session summaries from collected turns
+    let mut result_map: HashMap<String, Vec<SessionSummary>> = HashMap::new();
+
+    for (key, turns) in turn_map {
+        let parts: Vec<&str> = key.splitn(3, ':').collect();
+        let session_id = parts.get(1).copied().unwrap_or(&key);
+        let project_name = parts.get(2).copied().unwrap_or(&key);
+
+        let summary = build_session_summary(session_id, project_name, turns);
+        if summary.api_calls > 0 {
+            result_map
+                .entry(project_name.to_string())
+                .or_default()
+                .push(summary);
+        }
+    }
+
+    project_map_to_summaries(result_map)
 }
